@@ -40,12 +40,33 @@ class AutomationsRestApi(BaseSupersetApi):
     via the Devin API and filing Jira tickets. Access is restricted to
     authorized internal users via JWT tokens minted by the
     ``/api/v1/security/login`` endpoint.
+
+    The Devin and Jira HTTP clients are initialized once and reused
+    across requests and endpoints via :pyattr:`devin_client` and
+    :pyattr:`jira_client`.
     """
 
     resource_name = "automations"
     allow_browser_login = True
     openapi_spec_tag = "Automations"
     openapi_spec_component_schemas = (AutomationsTicketsResponseSchema,)
+
+    _devin_client: DevinClient | None = None
+    _jira_client: JiraClient | None = None
+
+    @property
+    def devin_client(self) -> DevinClient:
+        """Return a reusable Devin API client, creating one if needed."""
+        if self._devin_client is None:
+            self.__class__._devin_client = DevinClient()
+        return self._devin_client  # type: ignore[return-value]
+
+    @property
+    def jira_client(self) -> JiraClient:
+        """Return a reusable Jira API client, creating one if needed."""
+        if self._jira_client is None:
+            self.__class__._jira_client = JiraClient()
+        return self._jira_client  # type: ignore[return-value]
 
     @expose("/tickets", methods=("POST",))
     @event_logger.log_this
@@ -95,12 +116,11 @@ class AutomationsRestApi(BaseSupersetApi):
                 return self.response_400(message="DEVIN_ORG_ID is not configured")
 
             # Step 1: Use Devin API to identify bugs
-            devin_client = DevinClient()
-            prompt = devin_client.build_bug_identification_prompt(
+            prompt = self.devin_client.build_bug_identification_prompt(
                 num_bugs=num_bugs,
                 git_repo=git_repo,
             )
-            devin_response = devin_client.create_session(
+            devin_response = self.devin_client.create_session(
                 org_id=org_id,
                 prompt=prompt,
             )
@@ -109,7 +129,6 @@ class AutomationsRestApi(BaseSupersetApi):
             bugs = devin_response.get("bugs", [])
 
             # Step 2: Create Jira tickets for each bug
-            jira_client = JiraClient()
             tickets_created: list[dict[str, Any]] = []
 
             for bug in bugs:
@@ -124,7 +143,7 @@ class AutomationsRestApi(BaseSupersetApi):
                     f"Proposed Fix:\n{proposed_fix}"
                 )
 
-                ticket = jira_client.create_issue(
+                ticket = self.jira_client.create_issue(
                     project_key=config.JIRA_PROJECT_KEY,
                     summary=title,
                     description=description,

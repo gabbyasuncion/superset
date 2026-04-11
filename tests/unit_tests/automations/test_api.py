@@ -196,20 +196,24 @@ def test_tickets_endpoint_success(client: any, full_api_access: None) -> None:
         {"id": "10002", "key": "SUP-2"},
     ]
 
+    mock_devin = MagicMock()
+    mock_devin.build_bug_identification_prompt.return_value = "find bugs"
+    mock_devin.create_session.return_value = devin_response
+
+    mock_jira = MagicMock()
+    mock_jira.create_issue.side_effect = jira_responses
+
     with patch.dict("os.environ", env_vars):
         with (
-            patch("superset.automations.api.DevinClient") as mock_devin_cls,
-            patch("superset.automations.api.JiraClient") as mock_jira_cls,
+            patch(
+                "superset.automations.api.AutomationsRestApi.devin_client",
+                new_callable=lambda: property(lambda self: mock_devin),
+            ),
+            patch(
+                "superset.automations.api.AutomationsRestApi.jira_client",
+                new_callable=lambda: property(lambda self: mock_jira),
+            ),
         ):
-            mock_devin = MagicMock()
-            mock_devin.build_bug_identification_prompt.return_value = "find bugs"
-            mock_devin.create_session.return_value = devin_response
-            mock_devin_cls.return_value = mock_devin
-
-            mock_jira = MagicMock()
-            mock_jira.create_issue.side_effect = jira_responses
-            mock_jira_cls.return_value = mock_jira
-
             response = client.post("/api/v1/automations/tickets")
             assert response.status_code == 200
             data = response.json

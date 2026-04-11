@@ -51,5 +51,5 @@ class AutomationsConfig:
         )
 
         # Devin session polling configuration
-        self.DEVIN_POLL_INTERVAL: int = int(os.environ.get("DEVIN_POLL_INTERVAL", "10"))
-        self.DEVIN_POLL_TIMEOUT: int = int(os.environ.get("DEVIN_POLL_TIMEOUT", "600"))
+        self.DEVIN_POLL_INTERVAL: int = int(os.environ.get("DEVIN_POLL_INTERVAL", "30"))
+        self.DEVIN_POLL_TIMEOUT: int = int(os.environ.get("DEVIN_POLL_TIMEOUT", "1800"))

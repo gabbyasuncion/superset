@@ -35,6 +35,12 @@ class DevinClient:
     ``DEVIN_API_KEY`` environment variable.
     """
 
+    # Retry configuration for 429 rate-limit responses
+    _MAX_RETRIES: int = 5
+    _INITIAL_BACKOFF: float = 2.0
+    _BACKOFF_FACTOR: float = 2.0
+    _MAX_BACKOFF: float = 120.0
+
     def __init__(self) -> None:
         api_key = os.environ.get("DEVIN_API_KEY", "")
         if not api_key:
@@ -47,6 +53,71 @@ class DevinClient:
             }
         )
         self._base_url = AutomationsConfig.DEVIN_API_BASE_URL
+
+    def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """Execute an HTTP request with exponential backoff on 429 responses.
+
+        Respects the ``Retry-After`` header when present. Falls back to
+        exponential backoff starting at :pyattr:`_INITIAL_BACKOFF` seconds,
+        doubling each attempt up to :pyattr:`_MAX_BACKOFF`.
+
+        Args:
+            method: HTTP method (``GET``, ``POST``, etc.).
+            url: The request URL.
+            **kwargs: Additional keyword arguments forwarded to
+                ``requests.Session.request``.
+
+        Returns:
+            The successful :class:`requests.Response`.
+
+        Raises:
+            requests.HTTPError: If a non-429 error occurs, or if retries
+                are exhausted.
+        """
+        backoff = self._INITIAL_BACKOFF
+        for attempt in range(self._MAX_RETRIES + 1):
+            response = self._session.request(method, url, **kwargs)
+            if response.status_code != 429:
+                return response
+
+            if attempt == self._MAX_RETRIES:
+                logger.error(
+                    "Devin API rate limit exceeded after %d retries: "
+                    "status=%s url=%s body=%s",
+                    self._MAX_RETRIES,
+                    response.status_code,
+                    url,
+                    response.text,
+                )
+                response.raise_for_status()
+
+            retry_after = response.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    wait_time = float(retry_after)
+                except ValueError:
+                    wait_time = backoff
+            else:
+                wait_time = backoff
+
+            logger.warning(
+                "Devin API returned 429, retrying in %.1fs (attempt %d/%d, url=%s)",
+                wait_time,
+                attempt + 1,
+                self._MAX_RETRIES,
+                url,
+            )
+            time.sleep(wait_time)
+            backoff = min(backoff * self._BACKOFF_FACTOR, self._MAX_BACKOFF)
+
+        # Should not be reached, but satisfies type checker
+        response.raise_for_status()  # pragma: no cover
+        return response  # pragma: no cover
 
     def create_session(
         self,
@@ -70,7 +141,7 @@ class DevinClient:
         """
         url = f"{self._base_url}/v3/organizations/{org_id}/sessions"
         payload: dict[str, Any] = {"prompt": prompt}
-        response = self._session.post(url, json=payload)
+        response = self._request_with_retry("POST", url, json=payload)
         if not response.ok:
             logger.error(
                 "Devin API request failed: status=%s url=%s body=%s",
@@ -100,7 +171,7 @@ class DevinClient:
             requests.HTTPError: If the API returns a non-success status.
         """
         url = f"{self._base_url}/v3/organizations/{org_id}/sessions/{session_id}"
-        response = self._session.get(url)
+        response = self._request_with_retry("GET", url)
         if not response.ok:
             logger.error(
                 "Devin API get session failed: status=%s url=%s body=%s",
@@ -138,7 +209,7 @@ class DevinClient:
         params: dict[str, Any] = {"first": 200}
 
         while True:
-            response = self._session.get(url, params=params)
+            response = self._request_with_retry("GET", url, params=params)
             if not response.ok:
                 logger.error(
                     "Devin API list messages failed: status=%s url=%s body=%s",
@@ -162,8 +233,8 @@ class DevinClient:
         self,
         org_id: str,
         session_id: str,
-        poll_interval: int = 10,
-        timeout: int = 600,
+        poll_interval: int = 30,
+        timeout: int = 1800,
         terminal_statuses: tuple[str, ...] = ("exit", "error", "suspended"),
     ) -> dict[str, Any]:
         """Poll a Devin session until it reaches a terminal status.

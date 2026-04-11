@@ -20,28 +20,23 @@ import os
 
 
 class AutomationsConfig:
-    """Configuration for the Automations Admin API."""
+    """Configuration for the Automations Admin API.
 
-    # Number of bugs to identify in the superset repo
-    NUM_BUGS: int = int(os.environ.get("AUTOMATIONS_NUM_BUGS", "5"))
+    Environment variables are read at instantiation time so that
+    values are always up-to-date per request.
+    """
 
-    # Devin API organization ID
-    DEVIN_ORG_ID: str = os.environ.get("DEVIN_ORG_ID", "")
-
-    # Devin API base URL
+    # Static defaults
     DEVIN_API_BASE_URL: str = "https://api.devin.ai"
-
-    # Jira instance base URL
     JIRA_BASE_URL: str = "https://gabrielaasuncion.atlassian.net"
-
-    # Jira project key for bug tickets
-    JIRA_PROJECT_KEY: str = os.environ.get("JIRA_PROJECT_KEY", "SUP")
-
-    # Jira assignee display name
     JIRA_ASSIGNEE_NAME: str = "Devin Bug Hunter"
-
-    # Jira bug label
     JIRA_BUG_LABEL: str = "!bug_fix_pr"
-
-    # Git repo for bug identification
     TARGET_GIT_REPO: str = "gabbyasuncion/superset"
+
+    def __init__(self) -> None:
+        self.NUM_BUGS: int = int(os.environ.get("AUTOMATIONS_NUM_BUGS", "5"))
+        self.DEVIN_ORG_ID: str = os.environ.get("DEVIN_ORG_ID", "")
+        self.JIRA_PROJECT_KEY: str = os.environ.get("JIRA_PROJECT_KEY", "SUP")
+        self.JIRA_ASSIGNEE_ACCOUNT_ID: str = os.environ.get(
+            "JIRA_ASSIGNEE_ACCOUNT_ID", ""
+        )

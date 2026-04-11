@@ -56,7 +56,7 @@ class JiraClient:
         project_key: str,
         summary: str,
         description: str,
-        assignee_name: str,
+        assignee_account_id: str,
         label: str,
     ) -> dict[str, Any]:
         """Create a Jira bug ticket.
@@ -65,7 +65,7 @@ class JiraClient:
             project_key: The Jira project key (e.g. ``SUP``).
             summary: Short summary / title for the issue.
             description: Full description in Atlassian Document Format.
-            assignee_name: Display name of the assignee.
+            assignee_account_id: Jira account ID of the assignee.
             label: Label to attach to the issue.
 
         Returns:
@@ -75,30 +75,30 @@ class JiraClient:
             requests.HTTPError: If the API returns a non-success status.
         """
         url = f"{self._base_url}/rest/api/3/issue"
-        payload: dict[str, Any] = {
-            "fields": {
-                "project": {"key": project_key},
-                "summary": summary,
-                "issuetype": {"name": "Bug"},
-                "assignee": {"displayName": assignee_name},
-                "labels": [label],
-                "description": {
-                    "version": 1,
-                    "type": "doc",
-                    "content": [
-                        {
-                            "type": "paragraph",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": description,
-                                }
-                            ],
-                        }
-                    ],
-                },
-            }
+        fields: dict[str, Any] = {
+            "project": {"key": project_key},
+            "summary": summary,
+            "issuetype": {"name": "Bug"},
+            "labels": [label],
+            "description": {
+                "version": 1,
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": description,
+                            }
+                        ],
+                    }
+                ],
+            },
         }
+        if assignee_account_id:
+            fields["assignee"] = {"accountId": assignee_account_id}
+        payload: dict[str, Any] = {"fields": fields}
         response = self._session.post(url, json=payload)
         response.raise_for_status()
         result: dict[str, Any] = response.json()

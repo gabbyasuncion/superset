@@ -108,7 +108,7 @@ def test_jira_client_create_issue() -> None:
                 project_key="SUP",
                 summary="Test Bug",
                 description="Bug description",
-                assignee_name="Devin Bug Hunter",
+                assignee_account_id="abc123",
                 label="!bug_fix_pr",
             )
             mock_post.assert_called_once()
@@ -117,7 +117,7 @@ def test_jira_client_create_issue() -> None:
             assert payload["fields"]["project"]["key"] == "SUP"
             assert payload["fields"]["summary"] == "Test Bug"
             assert payload["fields"]["issuetype"]["name"] == "Bug"
-            assert payload["fields"]["assignee"]["displayName"] == "Devin Bug Hunter"
+            assert payload["fields"]["assignee"]["accountId"] == "abc123"
             assert payload["fields"]["labels"] == ["!bug_fix_pr"]
             assert result["key"] == "SUP-1"
 

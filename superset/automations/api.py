@@ -128,7 +128,7 @@ class AutomationsRestApi(BaseSupersetApi):
                     project_key=config.JIRA_PROJECT_KEY,
                     summary=title,
                     description=description,
-                    assignee_name=config.JIRA_ASSIGNEE_NAME,
+                    assignee_account_id=config.JIRA_ASSIGNEE_ACCOUNT_ID,
                     label=config.JIRA_BUG_LABEL,
                 )
                 tickets_created.append(ticket)

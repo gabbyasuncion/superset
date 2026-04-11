@@ -23,6 +23,16 @@ class AutomationsConfig:
     """Configuration for the Automations Admin API.
 
     Environment variables are read at instantiation time so that
+    values are always up-to-date per request.
+    """
+
+    # Static defaults
+    DEVIN_API_BASE_URL: str = "https://api.devin.ai"
+    JIRA_BASE_URL: str = "https://gabrielaasuncion.atlassian.net"
+    JIRA_ASSIGNEE_NAME: str = "Devin Bug Hunter"
+    JIRA_BUG_LABEL: str = "!bug_fix_pr"
+    TARGET_GIT_REPO: str = "gabbyasuncion/superset"
+
     def __init__(self) -> None:
         # Number of bugs to identify in the superset repo
         self.NUM_BUGS: int = int(os.environ.get("AUTOMATIONS_NUM_BUGS", "5"))
@@ -30,15 +40,10 @@ class AutomationsConfig:
         # Devin API organization ID
         self.DEVIN_ORG_ID: str = os.environ.get("DEVIN_ORG_ID", "")
 
-        # Devin API base URL
-        self.DEVIN_API_BASE_URL: str = "https://api.devin.ai"
-
-        # Jira instance base URL
-        self.JIRA_BASE_URL: str = "https://gabrielaasuncion.atlassian.net"
-
         # Jira project key for bug tickets
         self.JIRA_PROJECT_KEY: str = os.environ.get("JIRA_PROJECT_KEY", "SUP")
-        self.JIRA_PROJECT_KEY: str = os.environ.get("JIRA_PROJECT_KEY", "SUP")
+
+        # Jira assignee account ID
         self.JIRA_ASSIGNEE_ACCOUNT_ID: str = os.environ.get(
             "JIRA_ASSIGNEE_ACCOUNT_ID", ""
         )

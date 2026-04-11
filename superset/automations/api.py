@@ -1,0 +1,148 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from flask import Response
+from flask_appbuilder import expose
+from flask_appbuilder.security.decorators import permission_name, protect
+
+from superset.automations.config import AutomationsConfig
+from superset.automations.devin_client import DevinClient
+from superset.automations.jira_client import JiraClient
+from superset.automations.schemas import AutomationsTicketsResponseSchema
+from superset.extensions import event_logger
+from superset.views.base_api import BaseSupersetApi, statsd_metrics
+
+logger = logging.getLogger(__name__)
+
+
+class AutomationsRestApi(BaseSupersetApi):
+    """Automations Admin API.
+
+    Provides endpoints for automated workflows such as identifying bugs
+    via the Devin API and filing Jira tickets. Access is restricted to
+    authorized internal users via JWT tokens minted by the
+    ``/api/v1/security/login`` endpoint.
+    """
+
+    resource_name = "automations"
+    allow_browser_login = True
+    openapi_spec_tag = "Automations"
+    openapi_spec_component_schemas = (AutomationsTicketsResponseSchema,)
+
+    @expose("/tickets", methods=("POST",))
+    @event_logger.log_this
+    @protect()
+    @statsd_metrics
+    @permission_name("create_tickets")
+    def tickets(self) -> Response:
+        """Identify bugs via Devin and file Jira tickets.
+        ---
+        post:
+          summary: Identify bugs and create Jira tickets
+          description: >-
+            Uses the Devin API to identify bugs in the superset
+            repository and creates Jira bug tickets for each bug found.
+            The number of bugs to identify is sourced from the
+            automations configuration.
+          responses:
+            200:
+              description: Tickets created successfully
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      session_id:
+                        type: string
+                      tickets_created:
+                        type: array
+                        items:
+                          type: object
+                      bugs_requested:
+                        type: integer
+            400:
+              $ref: '#/components/responses/400'
+            401:
+              $ref: '#/components/responses/401'
+            500:
+              $ref: '#/components/responses/500'
+        """
+        try:
+            config = AutomationsConfig()
+            num_bugs = config.NUM_BUGS
+            org_id = config.DEVIN_ORG_ID
+            git_repo = config.TARGET_GIT_REPO
+
+            if not org_id:
+                return self.response_400(message="DEVIN_ORG_ID is not configured")
+
+            # Step 1: Use Devin API to identify bugs
+            devin_client = DevinClient()
+            prompt = devin_client.build_bug_identification_prompt(
+                num_bugs=num_bugs,
+                git_repo=git_repo,
+            )
+            devin_response = devin_client.create_session(
+                org_id=org_id,
+                prompt=prompt,
+            )
+
+            session_id = devin_response.get("session_id", "")
+            bugs = devin_response.get("bugs", [])
+
+            # Step 2: Create Jira tickets for each bug
+            jira_client = JiraClient()
+            tickets_created: list[dict[str, Any]] = []
+
+            for bug in bugs:
+                title = bug.get("title", "Bug identified by Devin")
+                erroneous_code = bug.get("erroneous_code", "")
+                impact = bug.get("impact", "")
+                proposed_fix = bug.get("proposed_fix", "")
+
+                description = (
+                    f"Erroneous Code:\n{erroneous_code}\n\n"
+                    f"Impact:\n{impact}\n\n"
+                    f"Proposed Fix:\n{proposed_fix}"
+                )
+
+                ticket = jira_client.create_issue(
+                    project_key=config.JIRA_PROJECT_KEY,
+                    summary=title,
+                    description=description,
+                    assignee_name=config.JIRA_ASSIGNEE_NAME,
+                    label=config.JIRA_BUG_LABEL,
+                )
+                tickets_created.append(ticket)
+
+            return self.response(
+                200,
+                session_id=session_id,
+                tickets_created=tickets_created,
+                bugs_requested=num_bugs,
+            )
+
+        except ValueError as ex:
+            logger.error("Configuration error: %s", ex)
+            return self.response_400(message=str(ex))
+        except Exception as ex:
+            logger.exception("Failed to create automation tickets")
+            return self.response_500(message=str(ex))

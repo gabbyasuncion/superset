@@ -70,7 +70,14 @@ class DevinClient:
         url = f"{self._base_url}/v3/organizations/{org_id}/sessions"
         payload: dict[str, Any] = {"prompt": prompt}
         response = self._session.post(url, json=payload)
-        response.raise_for_status()
+        if not response.ok:
+            logger.error(
+                "Devin API request failed: status=%s url=%s body=%s",
+                response.status_code,
+                url,
+                response.text,
+            )
+            response.raise_for_status()
         result: dict[str, Any] = response.json()
         return result
 

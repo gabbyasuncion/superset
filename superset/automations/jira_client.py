@@ -100,6 +100,13 @@ class JiraClient:
             fields["assignee"] = {"accountId": assignee_account_id}
         payload: dict[str, Any] = {"fields": fields}
         response = self._session.post(url, json=payload)
-        response.raise_for_status()
+        if not response.ok:
+            logger.error(
+                "Jira API request failed: status=%s url=%s body=%s",
+                response.status_code,
+                url,
+                response.text,
+            )
+            response.raise_for_status()
         result: dict[str, Any] = response.json()
         return result

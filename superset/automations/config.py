@@ -32,6 +32,8 @@ class AutomationsConfig:
     JIRA_ASSIGNEE_NAME: str = "Devin Bug Hunter"
     JIRA_BUG_LABEL: str = "!bug_fix_pr"
     TARGET_GIT_REPO: str = "gabbyasuncion/superset"
+    # Terminal statuses indicating the Devin session has finished
+    DEVIN_TERMINAL_STATUSES: tuple[str, ...] = ("exit", "error", "suspended")
 
     def __init__(self) -> None:
         # Number of bugs to identify in the superset repo
@@ -47,3 +49,7 @@ class AutomationsConfig:
         self.JIRA_ASSIGNEE_ACCOUNT_ID: str = os.environ.get(
             "JIRA_ASSIGNEE_ACCOUNT_ID", ""
         )
+
+        # Devin session polling configuration
+        self.DEVIN_POLL_INTERVAL: int = int(os.environ.get("DEVIN_POLL_INTERVAL", "10"))
+        self.DEVIN_POLL_TIMEOUT: int = int(os.environ.get("DEVIN_POLL_TIMEOUT", "600"))

@@ -28,6 +28,7 @@ from superset.automations.devin_client import DevinClient
 from superset.automations.jira_client import JiraClient
 from superset.automations.schemas import AutomationsTicketsResponseSchema
 from superset.extensions import event_logger
+from superset.utils import json
 from superset.views.base_api import BaseSupersetApi, statsd_metrics
 
 logger = logging.getLogger(__name__)
@@ -115,7 +116,7 @@ class AutomationsRestApi(BaseSupersetApi):
             if not org_id:
                 return self.response_400(message="DEVIN_ORG_ID is not configured")
 
-            # Step 1: Use Devin API to identify bugs
+            # Step 1: Create a Devin session to identify bugs
             prompt = self.devin_client.build_bug_identification_prompt(
                 num_bugs=num_bugs,
                 git_repo=git_repo,
@@ -126,9 +127,40 @@ class AutomationsRestApi(BaseSupersetApi):
             )
 
             session_id = devin_response.get("session_id", "")
-            bugs = devin_response.get("bugs", [])
+            if not session_id:
+                return self.response_500(
+                    message="Devin API did not return a session_id"
+                )
 
-            # Step 2: Create Jira tickets for each bug
+            # Step 2: Poll until the session completes
+            logger.info("Polling Devin session %s until complete", session_id)
+            final_session = self.devin_client.poll_session_until_complete(
+                org_id=org_id,
+                session_id=session_id,
+                poll_interval=config.DEVIN_POLL_INTERVAL,
+                timeout=config.DEVIN_POLL_TIMEOUT,
+                terminal_statuses=config.DEVIN_TERMINAL_STATUSES,
+            )
+
+            final_status = final_session.get("status", "")
+            if final_status == "error":
+                logger.error("Devin session %s ended with error", session_id)
+                return self.response_500(
+                    message=f"Devin session {session_id} ended with error status"
+                )
+
+            # Step 3: Retrieve messages from the completed session
+            messages = self.devin_client.list_messages(
+                org_id=org_id,
+                session_id=session_id,
+            )
+
+            bugs = self._extract_bugs_from_messages(messages)
+            logger.info(
+                "Extracted %d bugs from Devin session %s", len(bugs), session_id
+            )
+
+            # Step 4: Create Jira tickets for each bug
             tickets_created: list[dict[str, Any]] = []
 
             for bug in bugs:
@@ -159,9 +191,55 @@ class AutomationsRestApi(BaseSupersetApi):
                 bugs_requested=num_bugs,
             )
 
+        except TimeoutError as ex:
+            logger.error("Devin session polling timed out: %s", ex)
+            return self.response_500(message=str(ex))
         except ValueError as ex:
             logger.error("Configuration error: %s", ex)
             return self.response_400(message=str(ex))
         except Exception as ex:
             logger.exception("Failed to create automation tickets")
             return self.response_500(message=str(ex))
+
+    @staticmethod
+    def _extract_bugs_from_messages(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Parse bug data from Devin session messages.
+
+        Scans messages in reverse order (most recent first) looking for
+        a JSON array of bug objects with the expected keys.
+
+        Args:
+            messages: List of message dicts from the Devin API.
+
+        Returns:
+            A list of bug dicts, each with 'title', 'erroneous_code',
+            'impact', and 'proposed_fix' keys.
+        """
+        for message in reversed(messages):
+            text = message.get("text", "") or message.get("content", "")
+            if not text:
+                continue
+            # Try to find a JSON array in the message text
+            try:
+                # Look for JSON array directly
+                start = text.find("[")
+                end = text.rfind("]")
+                if start != -1 and end != -1 and end > start:
+                    candidate = text[start : end + 1]
+                    parsed = json.loads(candidate)
+                    if (
+                        isinstance(parsed, list)
+                        and len(parsed) > 0
+                        and isinstance(parsed[0], dict)
+                        and any(
+                            k in parsed[0]
+                            for k in ("title", "erroneous_code", "impact")
+                        )
+                    ):
+                        return parsed  # type: ignore[no-any-return]
+            except (json.JSONDecodeError, IndexError, KeyError):
+                continue
+        logger.warning("No bug data found in Devin session messages")
+        return []

@@ -23,6 +23,7 @@ import pytest
 from superset.automations.config import AutomationsConfig
 from superset.automations.devin_client import DevinClient
 from superset.automations.jira_client import JiraClient
+from superset.utils import json
 
 
 def test_devin_client_requires_api_key() -> None:
@@ -173,9 +174,8 @@ def test_tickets_endpoint_success(client: any, full_api_access: None) -> None:
         "AUTOMATIONS_NUM_BUGS": "2",
     }
 
-    devin_response = {
-        "session_id": "sess-abc",
-        "bugs": [
+    bugs_json = json.dumps(
+        [
             {
                 "title": "Bug 1",
                 "erroneous_code": "bad code 1",
@@ -188,8 +188,14 @@ def test_tickets_endpoint_success(client: any, full_api_access: None) -> None:
                 "impact": "low impact",
                 "proposed_fix": "patch it",
             },
-        ],
-    }
+        ]
+    )
+
+    create_session_response = {"session_id": "sess-abc", "status": "running"}
+    poll_response = {"session_id": "sess-abc", "status": "exit"}
+    messages_response = [
+        {"text": f"Here are the bugs I found:\n{bugs_json}"},
+    ]
 
     jira_responses = [
         {"id": "10001", "key": "SUP-1"},
@@ -198,7 +204,9 @@ def test_tickets_endpoint_success(client: any, full_api_access: None) -> None:
 
     mock_devin = MagicMock()
     mock_devin.build_bug_identification_prompt.return_value = "find bugs"
-    mock_devin.create_session.return_value = devin_response
+    mock_devin.create_session.return_value = create_session_response
+    mock_devin.poll_session_until_complete.return_value = poll_response
+    mock_devin.list_messages.return_value = messages_response
 
     mock_jira = MagicMock()
     mock_jira.create_issue.side_effect = jira_responses
@@ -221,3 +229,92 @@ def test_tickets_endpoint_success(client: any, full_api_access: None) -> None:
             assert data["bugs_requested"] == 2
             assert len(data["tickets_created"]) == 2
             assert mock_jira.create_issue.call_count == 2
+            mock_devin.poll_session_until_complete.assert_called_once()
+            mock_devin.list_messages.assert_called_once()
+
+
+def test_tickets_endpoint_session_error(client: any, full_api_access: None) -> None:
+    """POST /api/v1/automations/tickets returns 500 when session errors."""
+    env_vars = {
+        "DEVIN_API_KEY": "test-key",
+        "DEVIN_ORG_ID": "org-123",
+        "JIRA_API_EMAIL": "user@test.com",
+        "JIRA_API_TOKEN": "jira-tok",
+    }
+
+    mock_devin = MagicMock()
+    mock_devin.build_bug_identification_prompt.return_value = "find bugs"
+    mock_devin.create_session.return_value = {
+        "session_id": "sess-err",
+        "status": "running",
+    }
+    mock_devin.poll_session_until_complete.return_value = {
+        "session_id": "sess-err",
+        "status": "error",
+    }
+
+    with patch.dict("os.environ", env_vars):
+        with patch(
+            "superset.automations.api.AutomationsRestApi.devin_client",
+            new_callable=lambda: property(lambda self: mock_devin),
+        ):
+            response = client.post("/api/v1/automations/tickets")
+            assert response.status_code == 500
+
+
+def test_tickets_endpoint_timeout(client: any, full_api_access: None) -> None:
+    """POST /api/v1/automations/tickets returns 500 on polling timeout."""
+    env_vars = {
+        "DEVIN_API_KEY": "test-key",
+        "DEVIN_ORG_ID": "org-123",
+        "JIRA_API_EMAIL": "user@test.com",
+        "JIRA_API_TOKEN": "jira-tok",
+    }
+
+    mock_devin = MagicMock()
+    mock_devin.build_bug_identification_prompt.return_value = "find bugs"
+    mock_devin.create_session.return_value = {
+        "session_id": "sess-timeout",
+        "status": "running",
+    }
+    mock_devin.poll_session_until_complete.side_effect = TimeoutError(
+        "Devin session sess-timeout did not complete within 600s"
+    )
+
+    with patch.dict("os.environ", env_vars):
+        with patch(
+            "superset.automations.api.AutomationsRestApi.devin_client",
+            new_callable=lambda: property(lambda self: mock_devin),
+        ):
+            response = client.post("/api/v1/automations/tickets")
+            assert response.status_code == 500
+
+
+def test_extract_bugs_from_messages() -> None:
+    """_extract_bugs_from_messages parses JSON bug array from messages."""
+    from superset.automations.api import AutomationsRestApi
+
+    bugs_data = [
+        {
+            "title": "NPE in foo",
+            "erroneous_code": "x.bar()",
+            "impact": "crash",
+            "proposed_fix": "null check",
+        }
+    ]
+    messages = [
+        {"text": "Starting analysis..."},
+        {"text": f"Found bugs:\n{json.dumps(bugs_data)}"},
+    ]
+    result = AutomationsRestApi._extract_bugs_from_messages(messages)
+    assert len(result) == 1
+    assert result[0]["title"] == "NPE in foo"
+
+
+def test_extract_bugs_from_messages_empty() -> None:
+    """_extract_bugs_from_messages returns empty list when no bugs found."""
+    from superset.automations.api import AutomationsRestApi
+
+    messages = [{"text": "No bugs here"}]
+    result = AutomationsRestApi._extract_bugs_from_messages(messages)
+    assert result == []

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any
 
 import requests
@@ -80,6 +81,125 @@ class DevinClient:
             response.raise_for_status()
         result: dict[str, Any] = response.json()
         return result
+
+    def get_session(
+        self,
+        org_id: str,
+        session_id: str,
+    ) -> dict[str, Any]:
+        """Get the current status of a Devin session.
+
+        Args:
+            org_id: The Devin organization ID.
+            session_id: The Devin session ID.
+
+        Returns:
+            The JSON response containing session status and metadata.
+
+        Raises:
+            requests.HTTPError: If the API returns a non-success status.
+        """
+        url = f"{self._base_url}/v3/organizations/{org_id}/sessions/{session_id}"
+        response = self._session.get(url)
+        if not response.ok:
+            logger.error(
+                "Devin API get session failed: status=%s url=%s body=%s",
+                response.status_code,
+                url,
+                response.text,
+            )
+            response.raise_for_status()
+        result: dict[str, Any] = response.json()
+        return result
+
+    def list_messages(
+        self,
+        org_id: str,
+        session_id: str,
+    ) -> list[dict[str, Any]]:
+        """List all messages for a Devin session.
+
+        Uses cursor-based pagination to retrieve all messages.
+
+        Args:
+            org_id: The Devin organization ID.
+            session_id: The Devin session ID.
+
+        Returns:
+            A list of message objects from the session.
+
+        Raises:
+            requests.HTTPError: If the API returns a non-success status.
+        """
+        url = (
+            f"{self._base_url}/v3/organizations/{org_id}/sessions/{session_id}/messages"
+        )
+        all_messages: list[dict[str, Any]] = []
+        params: dict[str, Any] = {"first": 200}
+
+        while True:
+            response = self._session.get(url, params=params)
+            if not response.ok:
+                logger.error(
+                    "Devin API list messages failed: status=%s url=%s body=%s",
+                    response.status_code,
+                    url,
+                    response.text,
+                )
+                response.raise_for_status()
+            data = response.json()
+            items = data.get("items", [])
+            all_messages.extend(items)
+
+            page_info = data.get("page_info", {})
+            if not page_info.get("has_next_page", False):
+                break
+            params["after"] = page_info["end_cursor"]
+
+        return all_messages
+
+    def poll_session_until_complete(
+        self,
+        org_id: str,
+        session_id: str,
+        poll_interval: int = 10,
+        timeout: int = 600,
+        terminal_statuses: tuple[str, ...] = ("exit", "error", "suspended"),
+    ) -> dict[str, Any]:
+        """Poll a Devin session until it reaches a terminal status.
+
+        Args:
+            org_id: The Devin organization ID.
+            session_id: The Devin session ID.
+            poll_interval: Seconds between status checks.
+            timeout: Maximum seconds to wait before raising TimeoutError.
+            terminal_statuses: Statuses that indicate the session is done.
+
+        Returns:
+            The final session response.
+
+        Raises:
+            TimeoutError: If the session does not complete within timeout.
+            requests.HTTPError: If any API call fails.
+        """
+        elapsed = 0
+        while elapsed < timeout:
+            session_data = self.get_session(org_id, session_id)
+            status = session_data.get("status", "")
+            logger.info(
+                "Devin session %s status: %s (elapsed: %ds)",
+                session_id,
+                status,
+                elapsed,
+            )
+            if status in terminal_statuses:
+                return session_data
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+
+        raise TimeoutError(
+            f"Devin session {session_id} did not complete within {timeout}s"
+        )
 
     def build_bug_identification_prompt(
         self,

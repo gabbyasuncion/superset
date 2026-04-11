@@ -47,7 +47,7 @@ class AutomationsRestApi(BaseSupersetApi):
     """
 
     resource_name = "automations"
-    allow_browser_login = True
+    allow_browser_login = False
     openapi_spec_tag = "Automations"
     openapi_spec_component_schemas = (AutomationsTicketsResponseSchema,)
 

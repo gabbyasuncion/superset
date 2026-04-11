@@ -312,6 +312,7 @@ WTF_CSRF_EXEMPT_LIST = [
     "superset.views.core.log",
     "superset.views.datasource.views.samples",
     "flask_appbuilder.security.views.acs",
+    "superset.automations.api.tickets",
 ]
 
 # Whether to run the web server in debug mode or not
@@ -1159,6 +1160,9 @@ CORS_OPTIONS: dict[Any, Any] = {
     "origins": [
         "https://tile.openstreetmap.org",
         "https://tile.osm.ch",
+        "https://gabrielaasuncion.atlassian.net",
+        "http://localhost:8088",
+        "http://127.0.0.1:8088",
     ]
 }
 
@@ -2161,6 +2165,7 @@ TALISMAN_CONFIG = {
             "https://tiles.versatiles.org",
             "https://*.protomaps.com",
             "https://*.maplibre.org",
+            "https://gabrielaasuncion.atlassian.net",
         ],
         "object-src": "'none'",
         "style-src": [
@@ -2208,6 +2213,7 @@ TALISMAN_DEV_CONFIG = {
             "https://tiles.versatiles.org",
             "https://*.protomaps.com",
             "https://*.maplibre.org",
+            "https://gabrielaasuncion.atlassian.net",
         ],
         "object-src": "'none'",
         "style-src": [

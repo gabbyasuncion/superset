@@ -260,7 +260,11 @@ class DevinClient:
                 response.text,
             )
             response.raise_for_status()
-        data: dict[str, Any] = response.json()
+        data = response.json()
+        # The attachments endpoint returns a JSON array directly.
+        if isinstance(data, list):
+            return data  # type: ignore[return-value]
+        # Fallback: if the response is wrapped in an object, try "items".
         items: list[dict[str, Any]] = data.get("items", [])
         return items
 

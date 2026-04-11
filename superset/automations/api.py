@@ -132,30 +132,22 @@ class AutomationsRestApi(BaseSupersetApi):
                     message="Devin API did not return a session_id"
                 )
 
-            # Step 2: Poll until the session completes
-            logger.info("Polling Devin session %s until complete", session_id)
-            final_session = self.devin_client.poll_session_until_complete(
+            # Step 2: Poll messages until Devin responds
+            logger.info("Polling Devin session %s for a response message", session_id)
+            self.devin_client.poll_for_devin_message(
                 org_id=org_id,
                 session_id=session_id,
                 poll_interval=config.DEVIN_POLL_INTERVAL,
                 timeout=config.DEVIN_POLL_TIMEOUT,
-                terminal_statuses=config.DEVIN_TERMINAL_STATUSES,
             )
 
-            final_status = final_session.get("status", "")
-            if final_status == "error":
-                logger.error("Devin session %s ended with error", session_id)
-                return self.response_500(
-                    message=f"Devin session {session_id} ended with error status"
-                )
-
-            # Step 3: Retrieve messages from the completed session
-            messages = self.devin_client.list_messages(
+            # Step 3: Retrieve bugs_report.json from session attachments
+            attachments = self.devin_client.list_attachments(
                 org_id=org_id,
                 session_id=session_id,
             )
 
-            bugs = self._extract_bugs_from_messages(messages)
+            bugs = self._download_bugs_report(attachments)
             logger.info(
                 "Extracted %d bugs from Devin session %s", len(bugs), session_id
             )
@@ -201,45 +193,40 @@ class AutomationsRestApi(BaseSupersetApi):
             logger.exception("Failed to create automation tickets")
             return self.response_500(message=str(ex))
 
-    @staticmethod
-    def _extract_bugs_from_messages(
-        messages: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Parse bug data from Devin session messages.
+    _BUGS_REPORT_FILENAME: str = "bugs_report.json"
 
-        Scans messages in reverse order (most recent first) looking for
-        a JSON array of bug objects with the expected keys.
+    def _download_bugs_report(
+        self,
+        attachments: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Find and download bugs_report.json from session attachments.
 
         Args:
-            messages: List of message dicts from the Devin API.
+            attachments: List of attachment dicts from the Devin API.
 
         Returns:
-            A list of bug dicts, each with 'title', 'erroneous_code',
-            'impact', and 'proposed_fix' keys.
+            A list of bug dicts parsed from the attachment content.
+
+        Raises:
+            ValueError: If ``bugs_report.json`` is not found among
+                the attachments.
         """
-        for message in reversed(messages):
-            text = message.get("text", "") or message.get("content", "")
-            if not text:
-                continue
-            # Try to find a JSON array in the message text
-            try:
-                # Look for JSON array directly
-                start = text.find("[")
-                end = text.rfind("]")
-                if start != -1 and end != -1 and end > start:
-                    candidate = text[start : end + 1]
-                    parsed = json.loads(candidate)
-                    if (
-                        isinstance(parsed, list)
-                        and len(parsed) > 0
-                        and isinstance(parsed[0], dict)
-                        and any(
-                            k in parsed[0]
-                            for k in ("title", "erroneous_code", "impact")
-                        )
-                    ):
-                        return parsed  # type: ignore[no-any-return]
-            except (json.JSONDecodeError, IndexError, KeyError):
-                continue
-        logger.warning("No bug data found in Devin session messages")
-        return []
+        for attachment in attachments:
+            if attachment.get("name") == self._BUGS_REPORT_FILENAME:
+                download_url = attachment.get("url", "")
+                if not download_url:
+                    raise ValueError(
+                        f"{self._BUGS_REPORT_FILENAME} attachment has no URL"
+                    )
+                content = self.devin_client.download_attachment(download_url)
+                parsed = json.loads(content)
+                if isinstance(parsed, list):
+                    return parsed  # type: ignore[no-any-return]
+                logger.warning(
+                    "%s content is not a JSON array", self._BUGS_REPORT_FILENAME
+                )
+                return []
+
+        raise ValueError(
+            f"{self._BUGS_REPORT_FILENAME} not found in session attachments"
+        )

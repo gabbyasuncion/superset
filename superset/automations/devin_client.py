@@ -229,47 +229,117 @@ class DevinClient:
 
         return all_messages
 
-    def poll_session_until_complete(
+    def list_attachments(
+        self,
+        org_id: str,
+        session_id: str,
+    ) -> list[dict[str, Any]]:
+        """List all attachments for a Devin session.
+
+        Args:
+            org_id: The Devin organization ID.
+            session_id: The Devin session ID.
+
+        Returns:
+            A list of attachment objects, each with ``attachment_id``,
+            ``name``, and ``url`` keys.
+
+        Raises:
+            requests.HTTPError: If the API returns a non-success status.
+        """
+        url = (
+            f"{self._base_url}/v3/organizations/{org_id}"
+            f"/sessions/{session_id}/attachments"
+        )
+        response = self._request_with_retry("GET", url)
+        if not response.ok:
+            logger.error(
+                "Devin API list attachments failed: status=%s url=%s body=%s",
+                response.status_code,
+                url,
+                response.text,
+            )
+            response.raise_for_status()
+        data: dict[str, Any] = response.json()
+        items: list[dict[str, Any]] = data.get("items", [])
+        return items
+
+    def download_attachment(
+        self,
+        attachment_url: str,
+    ) -> str:
+        """Download an attachment by its URL and return the content as text.
+
+        Args:
+            attachment_url: The direct download URL for the attachment.
+
+        Returns:
+            The text content of the downloaded file.
+
+        Raises:
+            requests.HTTPError: If the download fails.
+        """
+        response = requests.get(attachment_url, timeout=60)
+        if not response.ok:
+            logger.error(
+                "Failed to download attachment: status=%s url=%s",
+                response.status_code,
+                attachment_url,
+            )
+            response.raise_for_status()
+        return response.text
+
+    def poll_for_devin_message(
         self,
         org_id: str,
         session_id: str,
         poll_interval: int = 30,
         timeout: int = 1800,
-        terminal_statuses: tuple[str, ...] = ("exit", "error", "suspended"),
-    ) -> dict[str, Any]:
-        """Poll a Devin session until it reaches a terminal status.
+    ) -> list[dict[str, Any]]:
+        """Poll session messages until Devin has responded.
+
+        Checks for any message from Devin (i.e. not a user message)
+        by polling the messages endpoint at the configured interval.
 
         Args:
             org_id: The Devin organization ID.
             session_id: The Devin session ID.
-            poll_interval: Seconds between status checks.
+            poll_interval: Seconds between message checks.
             timeout: Maximum seconds to wait before raising TimeoutError.
-            terminal_statuses: Statuses that indicate the session is done.
 
         Returns:
-            The final session response.
+            The full list of messages once a Devin response is found.
 
         Raises:
-            TimeoutError: If the session does not complete within timeout.
+            TimeoutError: If no Devin message appears within timeout.
             requests.HTTPError: If any API call fails.
         """
         elapsed = 0
         while elapsed < timeout:
-            session_data = self.get_session(org_id, session_id)
-            status = session_data.get("status", "")
+            messages = self.list_messages(org_id, session_id)
+            devin_messages = [
+                m
+                for m in messages
+                if m.get("role") != "user" and m.get("sender") != "user"
+            ]
+            if devin_messages:
+                logger.info(
+                    "Devin session %s has %d message(s) (elapsed: %ds)",
+                    session_id,
+                    len(devin_messages),
+                    elapsed,
+                )
+                return messages
             logger.info(
-                "Devin session %s status: %s (elapsed: %ds)",
+                "Devin session %s: no response yet (elapsed: %ds)",
                 session_id,
-                status,
                 elapsed,
             )
-            if status in terminal_statuses:
-                return session_data
             time.sleep(poll_interval)
             elapsed += poll_interval
 
         raise TimeoutError(
-            f"Devin session {session_id} did not complete within {timeout}s"
+            f"Devin session {session_id} did not respond within {timeout}s"
         )
 
     def build_bug_identification_prompt(
@@ -292,6 +362,7 @@ class DevinClient:
             f"1. A description of the erroneous code\n"
             f"2. Its impact on the application\n"
             f"3. A proposed fix\n\n"
-            f"Return the results as a JSON array where each element has "
+            f"Output the results as a JSON file named bugs_report.json "
+            f"containing a JSON array where each element has "
             f"the keys: 'title', 'erroneous_code', 'impact', 'proposed_fix'."
         )

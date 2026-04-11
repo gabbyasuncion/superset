@@ -52,6 +52,7 @@ def test_devin_client_build_prompt() -> None:
         assert "erroneous code" in prompt
         assert "impact" in prompt
         assert "proposed fix" in prompt
+        assert "bugs_report.json" in prompt
 
 
 def test_devin_client_create_session() -> None:
@@ -174,27 +175,32 @@ def test_tickets_endpoint_success(client: any, full_api_access: None) -> None:
         "AUTOMATIONS_NUM_BUGS": "2",
     }
 
-    bugs_json = json.dumps(
-        [
-            {
-                "title": "Bug 1",
-                "erroneous_code": "bad code 1",
-                "impact": "high impact",
-                "proposed_fix": "fix it",
-            },
-            {
-                "title": "Bug 2",
-                "erroneous_code": "bad code 2",
-                "impact": "low impact",
-                "proposed_fix": "patch it",
-            },
-        ]
-    )
+    bugs_data = [
+        {
+            "title": "Bug 1",
+            "erroneous_code": "bad code 1",
+            "impact": "high impact",
+            "proposed_fix": "fix it",
+        },
+        {
+            "title": "Bug 2",
+            "erroneous_code": "bad code 2",
+            "impact": "low impact",
+            "proposed_fix": "patch it",
+        },
+    ]
+    bugs_json = json.dumps(bugs_data)
 
     create_session_response = {"session_id": "sess-abc", "status": "running"}
-    poll_response = {"session_id": "sess-abc", "status": "exit"}
     messages_response = [
-        {"text": f"Here are the bugs I found:\n{bugs_json}"},
+        {"role": "assistant", "text": "I found 2 bugs."},
+    ]
+    attachments_response = [
+        {
+            "attachment_id": "att_1",
+            "name": "bugs_report.json",
+            "url": "https://example.com/bugs_report.json",
+        },
     ]
 
     jira_responses = [
@@ -205,8 +211,9 @@ def test_tickets_endpoint_success(client: any, full_api_access: None) -> None:
     mock_devin = MagicMock()
     mock_devin.build_bug_identification_prompt.return_value = "find bugs"
     mock_devin.create_session.return_value = create_session_response
-    mock_devin.poll_session_until_complete.return_value = poll_response
-    mock_devin.list_messages.return_value = messages_response
+    mock_devin.poll_for_devin_message.return_value = messages_response
+    mock_devin.list_attachments.return_value = attachments_response
+    mock_devin.download_attachment.return_value = bugs_json
 
     mock_jira = MagicMock()
     mock_jira.create_issue.side_effect = jira_responses
@@ -229,41 +236,15 @@ def test_tickets_endpoint_success(client: any, full_api_access: None) -> None:
             assert data["bugs_requested"] == 2
             assert len(data["tickets_created"]) == 2
             assert mock_jira.create_issue.call_count == 2
-            mock_devin.poll_session_until_complete.assert_called_once()
-            mock_devin.list_messages.assert_called_once()
-
-
-def test_tickets_endpoint_session_error(client: any, full_api_access: None) -> None:
-    """POST /api/v1/automations/tickets returns 500 when session errors."""
-    env_vars = {
-        "DEVIN_API_KEY": "test-key",
-        "DEVIN_ORG_ID": "org-123",
-        "JIRA_API_EMAIL": "user@test.com",
-        "JIRA_API_TOKEN": "jira-tok",
-    }
-
-    mock_devin = MagicMock()
-    mock_devin.build_bug_identification_prompt.return_value = "find bugs"
-    mock_devin.create_session.return_value = {
-        "session_id": "sess-err",
-        "status": "running",
-    }
-    mock_devin.poll_session_until_complete.return_value = {
-        "session_id": "sess-err",
-        "status": "error",
-    }
-
-    with patch.dict("os.environ", env_vars):
-        with patch(
-            "superset.automations.api.AutomationsRestApi.devin_client",
-            new_callable=lambda: property(lambda self: mock_devin),
-        ):
-            response = client.post("/api/v1/automations/tickets")
-            assert response.status_code == 500
+            mock_devin.poll_for_devin_message.assert_called_once()
+            mock_devin.list_attachments.assert_called_once()
+            mock_devin.download_attachment.assert_called_once_with(
+                "https://example.com/bugs_report.json"
+            )
 
 
 def test_tickets_endpoint_timeout(client: any, full_api_access: None) -> None:
-    """POST /api/v1/automations/tickets returns 500 on polling timeout."""
+    """POST /api/v1/automations/tickets returns 500 on message polling timeout."""
     env_vars = {
         "DEVIN_API_KEY": "test-key",
         "DEVIN_ORG_ID": "org-123",
@@ -277,8 +258,8 @@ def test_tickets_endpoint_timeout(client: any, full_api_access: None) -> None:
         "session_id": "sess-timeout",
         "status": "running",
     }
-    mock_devin.poll_session_until_complete.side_effect = TimeoutError(
-        "Devin session sess-timeout did not complete within 600s"
+    mock_devin.poll_for_devin_message.side_effect = TimeoutError(
+        "Devin session sess-timeout did not respond within 1800s"
     )
 
     with patch.dict("os.environ", env_vars):
@@ -290,8 +271,41 @@ def test_tickets_endpoint_timeout(client: any, full_api_access: None) -> None:
             assert response.status_code == 500
 
 
-def test_extract_bugs_from_messages() -> None:
-    """_extract_bugs_from_messages parses JSON bug array from messages."""
+def test_tickets_endpoint_missing_attachment(
+    client: any, full_api_access: None
+) -> None:
+    """POST /api/v1/automations/tickets returns 400 when bugs_report.json missing."""
+    env_vars = {
+        "DEVIN_API_KEY": "test-key",
+        "DEVIN_ORG_ID": "org-123",
+        "JIRA_API_EMAIL": "user@test.com",
+        "JIRA_API_TOKEN": "jira-tok",
+    }
+
+    mock_devin = MagicMock()
+    mock_devin.build_bug_identification_prompt.return_value = "find bugs"
+    mock_devin.create_session.return_value = {
+        "session_id": "sess-no-file",
+        "status": "running",
+    }
+    mock_devin.poll_for_devin_message.return_value = [
+        {"role": "assistant", "text": "Done"},
+    ]
+    mock_devin.list_attachments.return_value = [
+        {"attachment_id": "att_1", "name": "other_file.txt", "url": "https://x.com/f"},
+    ]
+
+    with patch.dict("os.environ", env_vars):
+        with patch(
+            "superset.automations.api.AutomationsRestApi.devin_client",
+            new_callable=lambda: property(lambda self: mock_devin),
+        ):
+            response = client.post("/api/v1/automations/tickets")
+            assert response.status_code == 400
+
+
+def test_download_bugs_report() -> None:
+    """_download_bugs_report finds and downloads bugs_report.json."""
     from superset.automations.api import AutomationsRestApi
 
     bugs_data = [
@@ -302,19 +316,34 @@ def test_extract_bugs_from_messages() -> None:
             "proposed_fix": "null check",
         }
     ]
-    messages = [
-        {"text": "Starting analysis..."},
-        {"text": f"Found bugs:\n{json.dumps(bugs_data)}"},
-    ]
-    result = AutomationsRestApi._extract_bugs_from_messages(messages)
-    assert len(result) == 1
-    assert result[0]["title"] == "NPE in foo"
+
+    api = AutomationsRestApi.__new__(AutomationsRestApi)
+    mock_devin = MagicMock()
+    mock_devin.download_attachment.return_value = json.dumps(bugs_data)
+
+    with patch(
+        "superset.automations.api.AutomationsRestApi.devin_client",
+        new_callable=lambda: property(lambda self: mock_devin),
+    ):
+        attachments = [
+            {
+                "attachment_id": "att_1",
+                "name": "bugs_report.json",
+                "url": "https://example.com/bugs.json",
+            },
+        ]
+        result = api._download_bugs_report(attachments)
+        assert len(result) == 1
+        assert result[0]["title"] == "NPE in foo"
 
 
-def test_extract_bugs_from_messages_empty() -> None:
-    """_extract_bugs_from_messages returns empty list when no bugs found."""
+def test_download_bugs_report_not_found() -> None:
+    """_download_bugs_report raises ValueError when file not found."""
     from superset.automations.api import AutomationsRestApi
 
-    messages = [{"text": "No bugs here"}]
-    result = AutomationsRestApi._extract_bugs_from_messages(messages)
-    assert result == []
+    api = AutomationsRestApi.__new__(AutomationsRestApi)
+    attachments = [
+        {"attachment_id": "att_1", "name": "other.txt", "url": "https://x.com/f"},
+    ]
+    with pytest.raises(ValueError, match="bugs_report.json not found"):
+        api._download_bugs_report(attachments)

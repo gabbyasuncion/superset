@@ -27,7 +27,7 @@ from flask_appbuilder import expose
 from flask_appbuilder.security.decorators import permission_name, protect
 
 from superset.automations.config import AutomationsConfig
-from superset.automations.devin_client import DevinClient
+from superset.automations.devin_client import DevinClient, PRMetrics
 from superset.automations.jira_client import JiraClient
 from superset.automations.schemas import AutomationsTicketsResponseSchema
 from superset.extensions import event_logger
@@ -253,13 +253,31 @@ class AutomationsRestApi(BaseSupersetApi):
         if not to:
             return self.response_400(message="AUTOMATIONS_EMAIL_RECIPIENT is not configured")
 
+        org_id = config.DEVIN_ORG_ID
+        if not org_id:
+            return self.response_400(message="DEVIN_ORG_ID is not configured")
+
         try:
+            pr_metrics: PRMetrics = self.devin_client.get_pr_metrics(org_id=org_id)
+            prs_closed_count = pr_metrics["prs_closed_count"]
+            prs_created_count = pr_metrics["prs_created_count"]
+            prs_merged_count = pr_metrics["prs_merged_count"]
+            prs_opened_count = pr_metrics["prs_opened_count"]
+
+            merge_rate = (prs_merged_count / prs_created_count) * 100
+            close_rate = (prs_closed_count / prs_created_count) * 100
+
             env = Environment(
                 loader=FileSystemLoader(os.path.join(self._TEMPLATES_DIR, "email")),
                 autoescape=True,
             )
             template = env.get_template("bugs_report.html")
-            html_content = template.render()
+            html_content = template.render(
+                merge_rate=merge_rate,
+                close_rate=close_rate,
+                open_prs=prs_opened_count,
+                created_prs=prs_created_count,
+            )
             send_email_smtp(
                 to=to,
                 subject="Devin Bug Swatting Report",

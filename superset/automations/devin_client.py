@@ -19,13 +19,21 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, TypedDict
 
 import requests
 
 from superset.automations.config import AutomationsConfig
 
 logger = logging.getLogger(__name__)
+
+
+class PRMetrics(TypedDict):
+    prs_closed_count: int
+    prs_created_count: int
+    prs_merged_count: int
+    prs_opened_count: int
 
 
 class DevinClient:
@@ -306,6 +314,51 @@ class DevinClient:
             )
             response.raise_for_status()
         return response.text
+
+    def get_pr_metrics(
+        self,
+        org_id: str,
+    ) -> PRMetrics:
+        """Fetch PR metrics for the past month from the Devin API.
+
+        Calls ``GET /v3/organizations/{org_id}/metrics/prs`` with
+        ``time_after`` and ``time_before`` Unix timestamp query params
+        scoped to the 30 days preceding the call time.
+
+        Args:
+            org_id: The Devin organization ID.
+
+        Returns:
+            A :class:`PRMetrics` dict with ``prs_closed_count``,
+            ``prs_created_count``, ``prs_merged_count``, and
+            ``prs_opened_count``.
+
+        Raises:
+            requests.HTTPError: If the API returns a non-success status.
+        """
+        now = datetime.now(tz=timezone.utc)
+        start = now - timedelta(days=30)
+        params: dict[str, int] = {
+            "time_after": int(start.timestamp()),
+            "time_before": int(now.timestamp()),
+        }
+        url = f"{self._base_url}/v3/organizations/{org_id}/metrics/prs"
+        response = self._request_with_retry("GET", url, params=params)
+        if not response.ok:
+            logger.error(
+                "Devin API get PR metrics failed: status=%s url=%s body=%s",
+                response.status_code,
+                url,
+                response.text,
+            )
+            response.raise_for_status()
+        data: dict[str, Any] = response.json()
+        return PRMetrics(
+            prs_closed_count=int(data.get("prs_closed_count", 0)),
+            prs_created_count=int(data.get("prs_created_count", 0)),
+            prs_merged_count=int(data.get("prs_merged_count", 0)),
+            prs_opened_count=int(data.get("prs_opened_count", 0)),
+        )
 
     def poll_for_devin_message(
         self,

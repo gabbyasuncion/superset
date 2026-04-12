@@ -121,12 +121,12 @@ class AutomationsRestApi(BaseSupersetApi):
                 num_bugs=num_bugs,
                 git_repo=git_repo,
             )
-            # devin_response = self.devin_client.create_session(
-            #     org_id=org_id,
-            #     prompt=prompt,
-            # )
+            devin_response = self.devin_client.create_session(
+                org_id=org_id,
+                prompt=prompt,
+            )
 
-            session_id = "b0855278a929438e8d9252f902b56907"
+            session_id = devin_response.get("session_id", "")
             if not session_id:
                 return self.response_500(
                     message="Devin API did not return a session_id"

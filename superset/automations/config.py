@@ -53,3 +53,8 @@ class AutomationsConfig:
         # Devin session polling configuration
         self.DEVIN_POLL_INTERVAL: int = int(os.environ.get("DEVIN_POLL_INTERVAL", "30"))
         self.DEVIN_POLL_TIMEOUT: int = int(os.environ.get("DEVIN_POLL_TIMEOUT", "1800"))
+
+        # Email recipient for bug report notifications
+        self.AUTOMATIONS_EMAIL_RECIPIENT: str = os.environ.get(
+            "AUTOMATIONS_EMAIL_RECIPIENT", ""
+        )

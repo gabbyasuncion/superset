@@ -313,6 +313,7 @@ WTF_CSRF_EXEMPT_LIST = [
     "superset.views.datasource.views.samples",
     "flask_appbuilder.security.views.acs",
     "superset.automations.api.tickets",
+    "superset.automations.api.report",
 ]
 
 # Whether to run the web server in debug mode or not
@@ -1623,16 +1624,16 @@ EXTENSION_STARTUP_LOCK_TIMEOUT = 30  # Timeout in seconds for extension update l
 FLASK_APP_MUTATOR = None
 
 # smtp server configuration
-SMTP_HOST = "localhost"
-SMTP_STARTTLS = True
-SMTP_SSL = False
-SMTP_USER = "superset"
-SMTP_PORT = 25
-SMTP_PASSWORD = "superset"  # noqa: S105
-SMTP_MAIL_FROM = "superset@superset.com"
+SMTP_HOST = os.environ.get("SMTP_HOST", "localhost")
+SMTP_STARTTLS = os.environ.get("SMTP_STARTTLS", "true").lower() == "true"
+SMTP_SSL = os.environ.get("SMTP_SSL", "false").lower() == "true"
+SMTP_USER = os.environ.get("SMTP_USER", "superset")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "25"))
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "superset")  # noqa: S105
+SMTP_MAIL_FROM = os.environ.get("SMTP_MAIL_FROM", "superset@superset.com")
 # If True creates a default SSL context with ssl.Purpose.CLIENT_AUTH using the
 # default system root CA certificates.
-SMTP_SSL_SERVER_AUTH = False
+SMTP_SSL_SERVER_AUTH = os.environ.get("SMTP_SSL_SERVER_AUTH", "false").lower() == "true"
 ENABLE_CHUNK_ENCODING = False
 
 # Whether to bump the logging level to ERROR on the flask_appbuilder package

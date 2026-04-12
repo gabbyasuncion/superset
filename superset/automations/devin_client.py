@@ -270,16 +270,19 @@ class DevinClient:
 
     def download_attachment(
         self,
+        org_id: str,
         attachment_id: str,
         attachment_name: str,
     ) -> str:
         """Download an attachment and return the content as text.
 
-        Sends a GET request to ``/v1/attachments/{uuid}/{name}``.
+        Sends a GET request to
+        ``/v3/organizations/{org_id}/attachments/{uuid}/{name}``.
         The endpoint returns a 307 redirect to a presigned URL that
         provides temporary access to the file.
 
         Args:
+            org_id: The Devin organization ID.
             attachment_id: The unique identifier (UUID) of the attachment.
             attachment_name: The filename of the attachment.
 
@@ -289,7 +292,10 @@ class DevinClient:
         Raises:
             requests.HTTPError: If the download fails.
         """
-        url = f"{self._base_url}/v1/attachments/{attachment_id}/{attachment_name}"
+        url = (
+            f"{self._base_url}/v3/organizations/{org_id}"
+            f"/attachments/{attachment_id}/{attachment_name}"
+        )
         response = self._request_with_retry("GET", url, allow_redirects=True)
         if not response.ok:
             logger.error(

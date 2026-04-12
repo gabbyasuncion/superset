@@ -147,7 +147,7 @@ class AutomationsRestApi(BaseSupersetApi):
                 session_id=session_id,
             )
 
-            bugs = self._download_bugs_report(attachments)
+            bugs = self._download_bugs_report(attachments, org_id=org_id)
             logger.info(
                 "Extracted %d bugs from Devin session %s", len(bugs), session_id
             )
@@ -198,6 +198,7 @@ class AutomationsRestApi(BaseSupersetApi):
     def _download_bugs_report(
         self,
         attachments: list[dict[str, Any]],
+        org_id: str,
     ) -> list[dict[str, Any]]:
         """Find and download bugs_report.json from session attachments.
 
@@ -216,7 +217,7 @@ class AutomationsRestApi(BaseSupersetApi):
                 attachment_id = attachment.get("attachment_id", "")
                 attachment_name = attachment.get("name", "")
                 content = self.devin_client.download_attachment(
-                    attachment_id, attachment_name
+                    org_id, attachment_id, attachment_name
                 )
                 parsed = json.loads(content)
                 if isinstance(parsed, list):

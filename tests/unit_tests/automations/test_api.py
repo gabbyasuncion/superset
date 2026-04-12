@@ -240,7 +240,7 @@ def test_tickets_endpoint_success(client: Any, full_api_access: None) -> None:
             mock_devin.poll_for_devin_message.assert_called_once()
             mock_devin.list_attachments.assert_called_once()
             mock_devin.download_attachment.assert_called_once_with(
-                "att_1", "bugs_report.json"
+                "org-123", "att_1", "bugs_report.json"
             )
 
 
@@ -333,9 +333,9 @@ def test_download_bugs_report() -> None:
                 "url": "https://example.com/bugs.json",
             },
         ]
-        result = api._download_bugs_report(attachments)
+        result = api._download_bugs_report(attachments, org_id="org-test")
         mock_devin.download_attachment.assert_called_once_with(
-            "att_1", "bugs_report.json"
+            "org-test", "att_1", "bugs_report.json"
         )
         assert len(result) == 1
         assert result[0]["title"] == "NPE in foo"
@@ -350,4 +350,4 @@ def test_download_bugs_report_not_found() -> None:
         {"attachment_id": "att_1", "name": "other.txt", "url": "https://x.com/f"},
     ]
     with pytest.raises(ValueError, match="bugs_report.json not found"):
-        api._download_bugs_report(attachments)  # no org_id needed
+        api._download_bugs_report(attachments, org_id="org-test")

@@ -19,7 +19,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from flask import Response
+import os
+
+from flask import current_app, request, Response
+from jinja2 import Environment, FileSystemLoader
 from flask_appbuilder import expose
 from flask_appbuilder.security.decorators import permission_name, protect
 
@@ -29,10 +32,10 @@ from superset.automations.jira_client import JiraClient
 from superset.automations.schemas import AutomationsTicketsResponseSchema
 from superset.extensions import event_logger
 from superset.utils import json
+from superset.utils.core import send_email_smtp
 from superset.views.base_api import BaseSupersetApi, statsd_metrics
 
 logger = logging.getLogger(__name__)
-
 
 class AutomationsRestApi(BaseSupersetApi):
     """Automations Admin API.
@@ -186,6 +189,86 @@ class AutomationsRestApi(BaseSupersetApi):
             return self.response_400(message=str(ex))
         except Exception as ex:
             logger.exception("Failed to create automation tickets")
+            return self.response_500(message=str(ex))
+
+    _TEMPLATES_DIR: str = os.path.join(os.path.dirname(__file__), "templates")
+
+    @expose("/send_email", methods=("POST",))
+    @event_logger.log_this
+    @protect()
+    @statsd_metrics
+    @permission_name("send_email")
+    def send_email(self) -> Response:
+        """Send a bugs report email via the configured SMTP service.
+        ---
+        post:
+          summary: Send a bugs report email
+          description: >-
+            Renders the bugs_report.html template with the provided bugs
+            data and sends it to the recipient configured via
+            AUTOMATIONS_EMAIL_RECIPIENT.
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required:
+                    - subject
+                    - bugs
+                    - session_id
+                    - git_repo
+                  properties:
+                    subject:
+                      type: string
+                      description: Email subject line.
+                    bugs:
+                      type: array
+                      description: List of bug objects from the Devin session.
+                    session_id:
+                      type: string
+                      description: Devin session ID.
+                    git_repo:
+                      type: string
+                      description: Target git repository.
+          responses:
+            200:
+              description: Email sent successfully
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+            400:
+              $ref: '#/components/responses/400'
+            401:
+              $ref: '#/components/responses/401'
+            500:
+              $ref: '#/components/responses/500'
+        """
+        config = AutomationsConfig()
+        to = config.AUTOMATIONS_EMAIL_RECIPIENT
+        if not to:
+            return self.response_400(message="AUTOMATIONS_EMAIL_RECIPIENT is not configured")
+
+        try:
+            env = Environment(
+                loader=FileSystemLoader(os.path.join(self._TEMPLATES_DIR, "email")),
+                autoescape=True,
+            )
+            template = env.get_template("bugs_report.html")
+            html_content = template.render()
+            send_email_smtp(
+                to=to,
+                subject="Devin Bug Swatting Report",
+                html_content=html_content,
+                config=current_app.config,
+            )
+            return self.response(200, message=f"Email sent to {to}")
+        except Exception as ex:
+            logger.exception("Failed to send email")
             return self.response_500(message=str(ex))
 
     _BUGS_REPORT_PREFIX: str = "Devin's Bugs Report: "

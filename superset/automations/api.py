@@ -193,12 +193,12 @@ class AutomationsRestApi(BaseSupersetApi):
 
     _TEMPLATES_DIR: str = os.path.join(os.path.dirname(__file__), "templates")
 
-    @expose("/send_email", methods=("POST",))
+    @expose("/report", methods=("POST",))
     @event_logger.log_this
     @protect()
     @statsd_metrics
-    @permission_name("send_email")
-    def send_email(self) -> Response:
+    @permission_name("report")
+    def report(self) -> Response:
         """Send a bugs report email via the configured SMTP service.
         ---
         post:

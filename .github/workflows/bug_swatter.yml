@@ -1,0 +1,43 @@
+name: Devin AI Bug Swatter
+run-name: ${{ github.actor }} is testing out GitHub Actions 🚀
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+jobs:
+  auth_to_superset_api:
+    name: "authenticate to superset api"
+    runs-on: ubuntu-latest
+    outputs:
+      token: ${{ steps.get_auth_token.outputs.token }}
+    steps:
+      - name: Install dependencies
+        run: apt-get update -qq && apt-get install -yqq curl jq
+      - id: get_auth_token
+        env:
+          admin_api_username: ${{ secrets.ADMIN_API_USERNAME }}
+          admin_api_password: ${{ secrets.ADMIN_API_PASSWORD }}
+        run: |
+          bearer_token=$(curl -s -X POST http://localhost:8088/api/v1/security/login \
+            -H "Content-Type: application/json" \
+            -d "{\"username\": \"$admin_api_username\", \"password\": \"$admin_api_password\", \"provider\": \"db\"}" \
+            | jq -r '.access_token')
+          echo "token=${bearer_token}" >> "$GITHUB_OUTPUT"
+
+  show_token:
+    name: "displays token"
+    needs: auth_to_superset_api
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          TOKEN: ${{needs.auth_to_superset_api.outputs.token}}
+        run: echo $TOKEN
+  
+  # call_bug_swatter_api:
+  #   needs: auth_to_superset_api
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - env:
+  #         TOKEN: ${{needs.auth_to_superset_api.outputs.token}}
+  #       run: |
+  #         curl -X POST http://localhost:8088/api/v1/automations/tickets \
+  #           -H "Authorization: Bearer ${TOKEN}"

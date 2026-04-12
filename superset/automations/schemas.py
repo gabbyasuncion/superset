@@ -25,9 +25,9 @@ class AutomationsTicketsResponseSchema(Schema):
     session_id = fields.String(
         metadata={"description": "The Devin session ID used to identify bugs"}
     )
-    tickets_created = fields.List(
+    pr_prompts_sent = fields.List(
         fields.Dict(),
-        metadata={"description": "List of Jira tickets created"},
+        metadata={"description": "List of PR prompt responses from Devin"},
     )
     bugs_requested = fields.Integer(
         metadata={"description": "Number of bugs requested"}

@@ -28,9 +28,6 @@ class AutomationsConfig:
 
     # Static defaults
     DEVIN_API_BASE_URL: str = "https://api.devin.ai"
-    JIRA_BASE_URL: str = "https://gabrielaasuncion.atlassian.net"
-    JIRA_ASSIGNEE_NAME: str = "Devin Bug Hunter"
-    JIRA_BUG_LABEL: str = "!bug_fix_pr"
     TARGET_GIT_REPO: str = "gabbyasuncion/superset"
     # Terminal statuses indicating the Devin session has finished
     DEVIN_TERMINAL_STATUSES: tuple[str, ...] = ("exit", "error", "suspended")
@@ -41,14 +38,6 @@ class AutomationsConfig:
 
         # Devin API organization ID
         self.DEVIN_ORG_ID: str = os.environ.get("DEVIN_ORG_ID", "")
-
-        # Jira project key for bug tickets
-        self.JIRA_PROJECT_KEY: str = os.environ.get("JIRA_PROJECT_KEY", "SUP")
-
-        # Jira assignee account ID
-        self.JIRA_ASSIGNEE_ACCOUNT_ID: str = os.environ.get(
-            "JIRA_ASSIGNEE_ACCOUNT_ID", ""
-        )
 
         # Devin session polling configuration
         self.DEVIN_POLL_INTERVAL: int = int(os.environ.get("DEVIN_POLL_INTERVAL", "30"))

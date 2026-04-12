@@ -23,7 +23,6 @@ import pytest
 
 from superset.automations.config import AutomationsConfig
 from superset.automations.devin_client import DevinClient
-from superset.automations.jira_client import JiraClient
 from superset.utils import json
 
 
@@ -79,52 +78,53 @@ def test_devin_client_create_session() -> None:
             assert result["session_id"] == "sess-123"
 
 
-def test_jira_client_requires_credentials() -> None:
-    """JiraClient raises ValueError when credentials are missing."""
-    with patch.dict("os.environ", {}, clear=True):
-        with pytest.raises(ValueError, match="JIRA_API_EMAIL"):
-            JiraClient()
-
-
-def test_jira_client_sets_basic_auth() -> None:
-    """JiraClient sets basic auth with email and token."""
-    with patch.dict(
-        "os.environ",
-        {"JIRA_API_EMAIL": "user@test.com", "JIRA_API_TOKEN": "jira-tok"},
-    ):
-        client = JiraClient()
-        assert client._session.auth == ("user@test.com", "jira-tok")
-
-
-def test_jira_client_create_issue() -> None:
-    """create_issue sends correct POST request with proper payload."""
-    with patch.dict(
-        "os.environ",
-        {"JIRA_API_EMAIL": "user@test.com", "JIRA_API_TOKEN": "jira-tok"},
-    ):
-        client = JiraClient()
+def test_devin_client_send_message() -> None:
+    """send_message sends correct POST request."""
+    with patch.dict("os.environ", {"DEVIN_API_KEY": "test-key"}):
+        client = DevinClient()
         mock_response = MagicMock()
-        mock_response.json.return_value = {"id": "10001", "key": "SUP-1"}
-        mock_response.raise_for_status = MagicMock()
+        mock_response.ok = True
+        mock_response.json.return_value = {"status": "ok"}
+        mock_response.status_code = 200
         with patch.object(
-            client._session, "post", return_value=mock_response
-        ) as mock_post:
-            result = client.create_issue(
-                project_key="SUP",
-                summary="Test Bug",
-                description="Bug description",
-                assignee_account_id="abc123",
-                label="!bug_fix_pr",
+            client._session, "request", return_value=mock_response
+        ) as mock_request:
+            result = client.send_message(
+                org_id="org-456",
+                session_id="sess-123",
+                message="Please open a PR",
             )
-            mock_post.assert_called_once()
-            call_kwargs = mock_post.call_args
-            payload = call_kwargs[1]["json"]
-            assert payload["fields"]["project"]["key"] == "SUP"
-            assert payload["fields"]["summary"] == "Test Bug"
-            assert payload["fields"]["issuetype"]["name"] == "Bug"
-            assert payload["fields"]["assignee"]["accountId"] == "abc123"
-            assert payload["fields"]["labels"] == ["!bug_fix_pr"]
-            assert result["key"] == "SUP-1"
+            mock_request.assert_called_once_with(
+                "POST",
+                "https://api.devin.ai/v3/organizations/org-456"
+                "/sessions/devin-sess-123/messages",
+                json={"message": "Please open a PR"},
+            )
+            assert result["status"] == "ok"
+
+
+def test_devin_client_send_message_with_prefix() -> None:
+    """send_message does not double-prefix devin- IDs."""
+    with patch.dict("os.environ", {"DEVIN_API_KEY": "test-key"}):
+        client = DevinClient()
+        mock_response = MagicMock()
+        mock_response.ok = True
+        mock_response.json.return_value = {"status": "ok"}
+        mock_response.status_code = 200
+        with patch.object(
+            client._session, "request", return_value=mock_response
+        ) as mock_request:
+            client.send_message(
+                org_id="org-456",
+                session_id="devin-sess-123",
+                message="Please open a PR",
+            )
+            mock_request.assert_called_once_with(
+                "POST",
+                "https://api.devin.ai/v3/organizations/org-456"
+                "/sessions/devin-sess-123/messages",
+                json={"message": "Please open a PR"},
+            )
 
 
 def test_automations_config_defaults() -> None:
@@ -133,9 +133,6 @@ def test_automations_config_defaults() -> None:
         config = AutomationsConfig()
         assert config.NUM_BUGS == 5
         assert config.DEVIN_API_BASE_URL == "https://api.devin.ai"
-        assert config.JIRA_BASE_URL == "https://gabrielaasuncion.atlassian.net"
-        assert config.JIRA_ASSIGNEE_NAME == "Devin Bug Hunter"
-        assert config.JIRA_BUG_LABEL == "!bug_fix_pr"
         assert config.TARGET_GIT_REPO == "gabbyasuncion/superset"
 
 
@@ -146,13 +143,11 @@ def test_automations_config_from_env() -> None:
         {
             "AUTOMATIONS_NUM_BUGS": "10",
             "DEVIN_ORG_ID": "org-test",
-            "JIRA_PROJECT_KEY": "TEST",
         },
     ):
         config = AutomationsConfig()
         assert config.NUM_BUGS == 10
         assert config.DEVIN_ORG_ID == "org-test"
-        assert config.JIRA_PROJECT_KEY == "TEST"
 
 
 def test_tickets_endpoint_requires_auth(client: Any) -> None:
@@ -169,12 +164,10 @@ def test_tickets_endpoint_missing_org_id(client: Any, full_api_access: None) -> 
 
 
 def test_tickets_endpoint_success(client: Any, full_api_access: None) -> None:
-    """POST /api/v1/automations/tickets creates tickets successfully."""
+    """POST /api/v1/automations/tickets sends PR prompts successfully."""
     env_vars = {
         "DEVIN_API_KEY": "test-key",
         "DEVIN_ORG_ID": "org-123",
-        "JIRA_API_EMAIL": "user@test.com",
-        "JIRA_API_TOKEN": "jira-tok",
         "AUTOMATIONS_NUM_BUGS": "2",
     }
 
@@ -197,37 +190,26 @@ def test_tickets_endpoint_success(client: Any, full_api_access: None) -> None:
 
     create_session_response = {"session_id": "sess-abc", "status": "running"}
 
-    jira_responses = [
-        {"id": "10001", "key": "SUP-1"},
-        {"id": "10002", "key": "SUP-2"},
-    ]
+    send_message_response = {"status": "ok"}
 
     mock_devin = MagicMock()
     mock_devin.build_bug_identification_prompt.return_value = "find bugs"
     mock_devin.create_session.return_value = create_session_response
     mock_devin.poll_for_devin_message.return_value = bugs_message
-
-    mock_jira = MagicMock()
-    mock_jira.create_issue.side_effect = jira_responses
+    mock_devin.send_message.return_value = send_message_response
 
     with patch.dict("os.environ", env_vars):
-        with (
-            patch(
-                "superset.automations.api.AutomationsRestApi.devin_client",
-                new_callable=lambda: property(lambda self: mock_devin),
-            ),
-            patch(
-                "superset.automations.api.AutomationsRestApi.jira_client",
-                new_callable=lambda: property(lambda self: mock_jira),
-            ),
+        with patch(
+            "superset.automations.api.AutomationsRestApi.devin_client",
+            new_callable=lambda: property(lambda self: mock_devin),
         ):
             response = client.post("/api/v1/automations/tickets")
             assert response.status_code == 200
             data = response.json
             assert data["session_id"] == "sess-abc"
             assert data["bugs_requested"] == 2
-            assert len(data["tickets_created"]) == 2
-            assert mock_jira.create_issue.call_count == 2
+            assert len(data["pr_prompts_sent"]) == 2
+            assert mock_devin.send_message.call_count == 2
             mock_devin.poll_for_devin_message.assert_called_once()
 
 
@@ -236,8 +218,6 @@ def test_tickets_endpoint_timeout(client: Any, full_api_access: None) -> None:
     env_vars = {
         "DEVIN_API_KEY": "test-key",
         "DEVIN_ORG_ID": "org-123",
-        "JIRA_API_EMAIL": "user@test.com",
-        "JIRA_API_TOKEN": "jira-tok",
     }
 
     mock_devin = MagicMock()
@@ -264,8 +244,6 @@ def test_tickets_endpoint_bad_message(client: Any, full_api_access: None) -> Non
     env_vars = {
         "DEVIN_API_KEY": "test-key",
         "DEVIN_ORG_ID": "org-123",
-        "JIRA_API_EMAIL": "user@test.com",
-        "JIRA_API_TOKEN": "jira-tok",
     }
 
     mock_devin = MagicMock()

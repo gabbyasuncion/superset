@@ -331,11 +331,8 @@ class DevinClient:
         Returns:
             A :class:`PRMetrics` dict with ``prs_closed_count``,
             ``prs_created_count``, ``prs_merged_count``, and
-            ``prs_opened_count``.
+            ``prs_opened_count``."""
 
-        Raises:
-            requests.HTTPError: If the API returns a non-success status.
-        """
         now = datetime.now(tz=timezone.utc)
         start = now - timedelta(days=30)
         params: dict[str, int] = {
@@ -352,6 +349,7 @@ class DevinClient:
                 response.text,
             )
             response.raise_for_status()
+        
         data: dict[str, Any] = response.json()
         return PRMetrics(
             prs_closed_count=int(data.get("prs_closed_count", 0)),
@@ -359,6 +357,46 @@ class DevinClient:
             prs_merged_count=int(data.get("prs_merged_count", 0)),
             prs_opened_count=int(data.get("prs_opened_count", 0)),
         )
+    
+    def send_message(
+        self,
+        org_id: str,
+        session_id: str,
+        message: str,
+    ) -> dict[str, Any]:
+        """Send a message to an active Devin session.
+
+        Sends a POST request to
+        ``/v3/organizations/{org_id}/sessions/{devin_id}/messages``.
+        The session will be automatically resumed if suspended.
+
+        Args:
+            org_id: The Devin organization ID.
+            session_id: The Devin session ID (without the ``devin-`` prefix).
+            message: The message text to send.
+
+        Returns:
+            The JSON response from the Devin API.
+
+        Raises:
+            requests.HTTPError: If the API returns a non-success status.
+        """
+        devin_id = (
+            session_id if session_id.startswith("devin-") else f"devin-{session_id}"
+        )
+        url = f"{self._base_url}/v3/organizations/{org_id}/sessions/{devin_id}/messages"
+        payload: dict[str, Any] = {"message": message}
+        response = self._request_with_retry("POST", url, json=payload)
+        if not response.ok:
+            logger.error(
+                "Devin API send message failed: status=%s url=%s body=%s",
+                response.status_code,
+                url,
+                response.text,
+            )
+            response.raise_for_status()
+        result: dict[str, Any] = response.json()
+        return result
 
     def poll_for_devin_message(
         self,

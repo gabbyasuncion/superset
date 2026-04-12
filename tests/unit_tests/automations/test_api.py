@@ -53,7 +53,7 @@ def test_devin_client_build_prompt() -> None:
         assert "erroneous code" in prompt
         assert "impact" in prompt
         assert "proposed fix" in prompt
-        assert "bugs_report.json" in prompt
+        assert "Devin's Bugs Report: " in prompt
 
 
 def test_devin_client_create_session() -> None:
@@ -191,18 +191,9 @@ def test_tickets_endpoint_success(client: Any, full_api_access: None) -> None:
         },
     ]
     bugs_json = json.dumps(bugs_data)
+    bugs_message = f"Devin's Bugs Report: {bugs_json}"
 
     create_session_response = {"session_id": "sess-abc", "status": "running"}
-    messages_response = [
-        {"role": "assistant", "text": "I found 2 bugs."},
-    ]
-    attachments_response = [
-        {
-            "attachment_id": "att_1",
-            "name": "bugs_report.json",
-            "url": "https://example.com/bugs_report.json",
-        },
-    ]
 
     jira_responses = [
         {"id": "10001", "key": "SUP-1"},
@@ -212,9 +203,7 @@ def test_tickets_endpoint_success(client: Any, full_api_access: None) -> None:
     mock_devin = MagicMock()
     mock_devin.build_bug_identification_prompt.return_value = "find bugs"
     mock_devin.create_session.return_value = create_session_response
-    mock_devin.poll_for_devin_message.return_value = messages_response
-    mock_devin.list_attachments.return_value = attachments_response
-    mock_devin.download_attachment.return_value = bugs_json
+    mock_devin.poll_for_devin_message.return_value = bugs_message
 
     mock_jira = MagicMock()
     mock_jira.create_issue.side_effect = jira_responses
@@ -238,10 +227,6 @@ def test_tickets_endpoint_success(client: Any, full_api_access: None) -> None:
             assert len(data["tickets_created"]) == 2
             assert mock_jira.create_issue.call_count == 2
             mock_devin.poll_for_devin_message.assert_called_once()
-            mock_devin.list_attachments.assert_called_once()
-            mock_devin.download_attachment.assert_called_once_with(
-                "org-123", "att_1", "bugs_report.json"
-            )
 
 
 def test_tickets_endpoint_timeout(client: Any, full_api_access: None) -> None:
@@ -272,10 +257,8 @@ def test_tickets_endpoint_timeout(client: Any, full_api_access: None) -> None:
             assert response.status_code == 500
 
 
-def test_tickets_endpoint_missing_attachment(
-    client: Any, full_api_access: None
-) -> None:
-    """POST /api/v1/automations/tickets returns 400 when bugs_report.json missing."""
+def test_tickets_endpoint_bad_message(client: Any, full_api_access: None) -> None:
+    """POST /api/v1/automations/tickets returns 400 when message has wrong prefix."""
     env_vars = {
         "DEVIN_API_KEY": "test-key",
         "DEVIN_ORG_ID": "org-123",
@@ -286,15 +269,10 @@ def test_tickets_endpoint_missing_attachment(
     mock_devin = MagicMock()
     mock_devin.build_bug_identification_prompt.return_value = "find bugs"
     mock_devin.create_session.return_value = {
-        "session_id": "sess-no-file",
+        "session_id": "sess-bad-msg",
         "status": "running",
     }
-    mock_devin.poll_for_devin_message.return_value = [
-        {"role": "assistant", "text": "Done"},
-    ]
-    mock_devin.list_attachments.return_value = [
-        {"attachment_id": "att_1", "name": "other_file.txt", "url": "https://x.com/f"},
-    ]
+    mock_devin.poll_for_devin_message.return_value = "No prefix here"
 
     with patch.dict("os.environ", env_vars):
         with patch(
@@ -305,8 +283,8 @@ def test_tickets_endpoint_missing_attachment(
             assert response.status_code == 400
 
 
-def test_download_bugs_report() -> None:
-    """_download_bugs_report finds and downloads bugs_report.json."""
+def test_parse_bugs_from_message() -> None:
+    """_parse_bugs_from_message extracts bugs JSON from prefixed message."""
     from superset.automations.api import AutomationsRestApi
 
     bugs_data = [
@@ -319,35 +297,16 @@ def test_download_bugs_report() -> None:
     ]
 
     api = AutomationsRestApi.__new__(AutomationsRestApi)
-    mock_devin = MagicMock()
-    mock_devin.download_attachment.return_value = json.dumps(bugs_data)
-
-    with patch(
-        "superset.automations.api.AutomationsRestApi.devin_client",
-        new_callable=lambda: property(lambda self: mock_devin),
-    ):
-        attachments = [
-            {
-                "attachment_id": "att_1",
-                "name": "bugs_report.json",
-                "url": "https://example.com/bugs.json",
-            },
-        ]
-        result = api._download_bugs_report(attachments, org_id="org-test")
-        mock_devin.download_attachment.assert_called_once_with(
-            "org-test", "att_1", "bugs_report.json"
-        )
-        assert len(result) == 1
-        assert result[0]["title"] == "NPE in foo"
+    message_text = f"Devin's Bugs Report: {json.dumps(bugs_data)}"
+    result = api._parse_bugs_from_message(message_text)
+    assert len(result) == 1
+    assert result[0]["title"] == "NPE in foo"
 
 
-def test_download_bugs_report_not_found() -> None:
-    """_download_bugs_report raises ValueError when file not found."""
+def test_parse_bugs_from_message_bad_prefix() -> None:
+    """_parse_bugs_from_message raises ValueError when prefix is missing."""
     from superset.automations.api import AutomationsRestApi
 
     api = AutomationsRestApi.__new__(AutomationsRestApi)
-    attachments = [
-        {"attachment_id": "att_1", "name": "other.txt", "url": "https://x.com/f"},
-    ]
-    with pytest.raises(ValueError, match="bugs_report.json not found"):
-        api._download_bugs_report(attachments, org_id="org-test")
+    with pytest.raises(ValueError, match="does not start with expected prefix"):
+        api._parse_bugs_from_message("No prefix here []")

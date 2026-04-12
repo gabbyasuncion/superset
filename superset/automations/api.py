@@ -132,22 +132,17 @@ class AutomationsRestApi(BaseSupersetApi):
                     message="Devin API did not return a session_id"
                 )
 
-            # Step 2: Poll messages until Devin responds
-            logger.info("Polling Devin session %s for a response message", session_id)
-            self.devin_client.poll_for_devin_message(
+            # Step 2: Poll messages until Devin responds with bugs report
+            logger.info("Polling Devin session %s for bugs report message", session_id)
+            bugs_message = self.devin_client.poll_for_devin_message(
                 org_id=org_id,
                 session_id=session_id,
                 poll_interval=config.DEVIN_POLL_INTERVAL,
                 timeout=config.DEVIN_POLL_TIMEOUT,
             )
 
-            # Step 3: Retrieve bugs_report.json from session attachments
-            attachments = self.devin_client.list_attachments(
-                org_id=org_id,
-                session_id=session_id,
-            )
-
-            bugs = self._download_bugs_report(attachments, org_id=org_id)
+            # Step 3: Parse bugs JSON from the message
+            bugs = self._parse_bugs_from_message(bugs_message)
             logger.info(
                 "Extracted %d bugs from Devin session %s", len(bugs), session_id
             )
@@ -193,40 +188,37 @@ class AutomationsRestApi(BaseSupersetApi):
             logger.exception("Failed to create automation tickets")
             return self.response_500(message=str(ex))
 
-    _BUGS_REPORT_FILENAME: str = "bugs_report.json"
+    _BUGS_REPORT_PREFIX: str = "Devin's Bugs Report: "
 
-    def _download_bugs_report(
+    def _parse_bugs_from_message(
         self,
-        attachments: list[dict[str, Any]],
-        org_id: str,
+        message_text: str,
     ) -> list[dict[str, Any]]:
-        """Find and download bugs_report.json from session attachments.
+        """Extract and parse the bugs JSON from a Devin session message.
+
+        The message is expected to start with :pyattr:`_BUGS_REPORT_PREFIX`
+        followed by a JSON array of bug objects.
 
         Args:
-            attachments: List of attachment dicts from the Devin API.
+            message_text: The full text of the Devin message containing
+                the bugs report.
 
         Returns:
-            A list of bug dicts parsed from the attachment content.
+            A list of bug dicts parsed from the message.
 
         Raises:
-            ValueError: If ``bugs_report.json`` is not found among
-                the attachments.
+            ValueError: If the message does not contain the expected prefix
+                or the JSON content is not a valid array.
         """
-        for attachment in attachments:
-            if attachment.get("name") == self._BUGS_REPORT_FILENAME:
-                attachment_id = attachment.get("attachment_id", "")
-                attachment_name = attachment.get("name", "")
-                content = self.devin_client.download_attachment(
-                    org_id, attachment_id, attachment_name
-                )
-                parsed = json.loads(content)
-                if isinstance(parsed, list):
-                    return parsed
-                logger.warning(
-                    "%s content is not a JSON array", self._BUGS_REPORT_FILENAME
-                )
-                return []
+        if not message_text.startswith(self._BUGS_REPORT_PREFIX):
+            raise ValueError(
+                f"Message does not start with expected prefix: "
+                f"{self._BUGS_REPORT_PREFIX!r}"
+            )
 
-        raise ValueError(
-            f"{self._BUGS_REPORT_FILENAME} not found in session attachments"
-        )
+        json_str = message_text[len(self._BUGS_REPORT_PREFIX) :]
+        parsed = json.loads(json_str)
+        if isinstance(parsed, list):
+            return parsed
+        logger.warning("Bugs report message content is not a JSON array")
+        return []

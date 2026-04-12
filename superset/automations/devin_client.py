@@ -313,41 +313,41 @@ class DevinClient:
         session_id: str,
         poll_interval: int = 30,
         timeout: int = 1800,
-    ) -> dict[str, Any]:
-        """Poll session attachments until bugs_report.json is available.
+    ) -> str:
+        """Poll session messages until one with the bugs report prefix appears.
 
-        Checks for a ``bugs_report.json`` attachment by polling the attachments
-        endpoint at the configured interval.
+        Checks session messages for a message whose text starts with
+        :pyattr:`_BUGS_REPORT_PREFIX` by polling the messages endpoint at
+        the configured interval.
 
         Args:
             org_id: The Devin organization ID.
             session_id: The Devin session ID.
-            poll_interval: Seconds between attachment checks.
+            poll_interval: Seconds between message checks.
             timeout: Maximum seconds to wait before raising TimeoutError.
 
         Returns:
-            The attachment object for ``bugs_report.json``.
+            The full text of the message containing the bugs report.
 
         Raises:
-            TimeoutError: If ``bugs_report.json`` does not appear within timeout.
+            TimeoutError: If no matching message appears within *timeout*.
             requests.HTTPError: If any API call fails.
         """
         elapsed = 0
         while elapsed < timeout:
-            attachments = self.list_attachments(org_id, session_id)
-            bugs_report = next(
-                (a for a in attachments if a.get("name") == "bugs_report.json"),
-                None,
-            )
-            if bugs_report:
-                logger.info(
-                    "Devin session %s: bugs_report.json found (elapsed: %ds)",
-                    session_id,
-                    elapsed,
-                )
-                return bugs_report
+            messages = self.list_messages(org_id, session_id)
+            for msg in messages:
+                text = msg.get("text", "")
+                if text.startswith(self._BUGS_REPORT_PREFIX):
+                    logger.info(
+                        "Devin session %s: bugs report message found (elapsed: %ds)",
+                        session_id,
+                        elapsed,
+                    )
+                    return text
             logger.info(
-                "Devin session %s: bugs_report.json not yet available (elapsed: %ds)",
+                "Devin session %s: bugs report message not yet available "
+                "(elapsed: %ds)",
                 session_id,
                 elapsed,
             )
@@ -355,9 +355,11 @@ class DevinClient:
             elapsed += poll_interval
 
         raise TimeoutError(
-            f"Devin session {session_id} did not produce "
-            f"bugs_report.json within {timeout}s"
+            f"Devin session {session_id} did not produce a bugs report "
+            f"message within {timeout}s"
         )
+
+    _BUGS_REPORT_PREFIX: str = "Devin's Bugs Report: "
 
     def build_bug_identification_prompt(
         self,
@@ -365,6 +367,9 @@ class DevinClient:
         git_repo: str,
     ) -> str:
         """Build a prompt for Devin to identify bugs in a repository.
+
+        The prompt instructs Devin to return the bugs JSON inline in a
+        session message prefixed with :pyattr:`_BUGS_REPORT_PREFIX`.
 
         Args:
             num_bugs: The number of bugs to identify.
@@ -379,7 +384,12 @@ class DevinClient:
             f"1. A description of the erroneous code\n"
             f"2. Its impact on the application\n"
             f"3. A proposed fix\n\n"
-            f"Output the results as a JSON file named bugs_report.json "
-            f"containing a JSON array where each element has "
-            f"the keys: 'title', 'erroneous_code', 'impact', 'proposed_fix'."
+            f"Return the results as a JSON array in your response message "
+            f'prefixed with "{self._BUGS_REPORT_PREFIX}". '
+            f"Each element must have "
+            f"the keys: 'title', 'erroneous_code', 'impact', 'proposed_fix'.\n\n"
+            f"Example response format:\n"
+            f"{self._BUGS_REPORT_PREFIX}"
+            f'[{{"title": "...", "erroneous_code": "...", '
+            f'"impact": "...", "proposed_fix": "..."}}]'
         )

@@ -263,21 +263,25 @@ class DevinClient:
         data = response.json()
         # The attachments endpoint returns a JSON array directly.
         if isinstance(data, list):
-            return data  # type: ignore[return-value]
+            return data
         # Fallback: if the response is wrapped in an object, try "items".
         items: list[dict[str, Any]] = data.get("items", [])
         return items
 
     def download_attachment(
         self,
-        org_id: str,
         attachment_id: str,
         attachment_name: str,
     ) -> str:
-        """Download an attachment by its URL and return the content as text.
+        """Download an attachment and return the content as text.
+
+        Sends a GET request to ``/v1/attachments/{uuid}/{name}``.
+        The endpoint returns a 307 redirect to a presigned URL that
+        provides temporary access to the file.
 
         Args:
-            attachment_url: The direct download URL for the attachment.
+            attachment_id: The unique identifier (UUID) of the attachment.
+            attachment_name: The filename of the attachment.
 
         Returns:
             The text content of the downloaded file.
@@ -285,13 +289,11 @@ class DevinClient:
         Raises:
             requests.HTTPError: If the download fails.
         """
-        url = (
-            f"{self._base_url}/v3/organizations/{org_id}/attachments/{attachment_id}/{attachment_name}"
-        )
-        response = self._request_with_retry("GET", url)
+        url = f"{self._base_url}/v1/attachments/{attachment_id}/{attachment_name}"
+        response = self._request_with_retry("GET", url, allow_redirects=True)
         if not response.ok:
             logger.error(
-                "Devin API download attachments failed: status=%s url=%s body=%s",
+                "Devin API download attachment failed: status=%s url=%s body=%s",
                 response.status_code,
                 url,
                 response.text,
@@ -347,7 +349,8 @@ class DevinClient:
             elapsed += poll_interval
 
         raise TimeoutError(
-            f"Devin session {session_id} did not produce bugs_report.json within {timeout}s"
+            f"Devin session {session_id} did not produce "
+            f"bugs_report.json within {timeout}s"
         )
 
     def build_bug_identification_prompt(

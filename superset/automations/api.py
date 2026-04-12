@@ -117,7 +117,7 @@ class AutomationsRestApi(BaseSupersetApi):
                 return self.response_400(message="DEVIN_ORG_ID is not configured")
 
             # Step 1: Create a Devin session to identify bugs
-            prompt = self.devin_client.build_bug_identification_prompt(
+            self.devin_client.build_bug_identification_prompt(
                 num_bugs=num_bugs,
                 git_repo=git_repo,
             )
@@ -147,7 +147,7 @@ class AutomationsRestApi(BaseSupersetApi):
                 session_id=session_id,
             )
 
-            bugs = self._download_bugs_report(attachments, org_id=org_id)
+            bugs = self._download_bugs_report(attachments)
             logger.info(
                 "Extracted %d bugs from Devin session %s", len(bugs), session_id
             )
@@ -198,7 +198,6 @@ class AutomationsRestApi(BaseSupersetApi):
     def _download_bugs_report(
         self,
         attachments: list[dict[str, Any]],
-        org_id: str,
     ) -> list[dict[str, Any]]:
         """Find and download bugs_report.json from session attachments.
 
@@ -215,11 +214,13 @@ class AutomationsRestApi(BaseSupersetApi):
         for attachment in attachments:
             if attachment.get("name") == self._BUGS_REPORT_FILENAME:
                 attachment_id = attachment.get("attachment_id", "")
-                attachment_name = attachment.get("attachment_name", "")
-                content = self.devin_client.download_attachment(org_id, attachment_id, attachment_name)
+                attachment_name = attachment.get("name", "")
+                content = self.devin_client.download_attachment(
+                    attachment_id, attachment_name
+                )
                 parsed = json.loads(content)
                 if isinstance(parsed, list):
-                    return parsed  # type: ignore[no-any-return]
+                    return parsed
                 logger.warning(
                     "%s content is not a JSON array", self._BUGS_REPORT_FILENAME
                 )

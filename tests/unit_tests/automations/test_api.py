@@ -16,6 +16,7 @@
 # under the License.
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -152,20 +153,20 @@ def test_automations_config_from_env() -> None:
         assert config.JIRA_PROJECT_KEY == "TEST"
 
 
-def test_tickets_endpoint_requires_auth(client: any) -> None:
+def test_tickets_endpoint_requires_auth(client: Any) -> None:
     """POST /api/v1/automations/tickets requires authentication."""
     response = client.post("/api/v1/automations/tickets")
     assert response.status_code == 401
 
 
-def test_tickets_endpoint_missing_org_id(client: any, full_api_access: None) -> None:
+def test_tickets_endpoint_missing_org_id(client: Any, full_api_access: None) -> None:
     """POST /api/v1/automations/tickets returns 400 when DEVIN_ORG_ID is missing."""
     with patch.dict("os.environ", {"DEVIN_API_KEY": "key", "DEVIN_ORG_ID": ""}):
         response = client.post("/api/v1/automations/tickets")
         assert response.status_code == 400
 
 
-def test_tickets_endpoint_success(client: any, full_api_access: None) -> None:
+def test_tickets_endpoint_success(client: Any, full_api_access: None) -> None:
     """POST /api/v1/automations/tickets creates tickets successfully."""
     env_vars = {
         "DEVIN_API_KEY": "test-key",
@@ -239,11 +240,11 @@ def test_tickets_endpoint_success(client: any, full_api_access: None) -> None:
             mock_devin.poll_for_devin_message.assert_called_once()
             mock_devin.list_attachments.assert_called_once()
             mock_devin.download_attachment.assert_called_once_with(
-                "https://example.com/bugs_report.json"
+                "att_1", "bugs_report.json"
             )
 
 
-def test_tickets_endpoint_timeout(client: any, full_api_access: None) -> None:
+def test_tickets_endpoint_timeout(client: Any, full_api_access: None) -> None:
     """POST /api/v1/automations/tickets returns 500 on message polling timeout."""
     env_vars = {
         "DEVIN_API_KEY": "test-key",
@@ -272,7 +273,7 @@ def test_tickets_endpoint_timeout(client: any, full_api_access: None) -> None:
 
 
 def test_tickets_endpoint_missing_attachment(
-    client: any, full_api_access: None
+    client: Any, full_api_access: None
 ) -> None:
     """POST /api/v1/automations/tickets returns 400 when bugs_report.json missing."""
     env_vars = {
@@ -333,6 +334,9 @@ def test_download_bugs_report() -> None:
             },
         ]
         result = api._download_bugs_report(attachments)
+        mock_devin.download_attachment.assert_called_once_with(
+            "att_1", "bugs_report.json"
+        )
         assert len(result) == 1
         assert result[0]["title"] == "NPE in foo"
 
@@ -346,4 +350,4 @@ def test_download_bugs_report_not_found() -> None:
         {"attachment_id": "att_1", "name": "other.txt", "url": "https://x.com/f"},
     ]
     with pytest.raises(ValueError, match="bugs_report.json not found"):
-        api._download_bugs_report(attachments)
+        api._download_bugs_report(attachments)  # no org_id needed

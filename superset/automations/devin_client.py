@@ -270,7 +270,9 @@ class DevinClient:
 
     def download_attachment(
         self,
-        attachment_url: str,
+        org_id: str,
+        attachment_id: str,
+        attachment_name: str,
     ) -> str:
         """Download an attachment by its URL and return the content as text.
 
@@ -283,12 +285,16 @@ class DevinClient:
         Raises:
             requests.HTTPError: If the download fails.
         """
-        response = requests.get(attachment_url, timeout=60)
+        url = (
+            f"{self._base_url}/v3/organizations/{org_id}/attachments/{attachment_id}/{attachment_name}"
+        )
+        response = self._request_with_retry("GET", url)
         if not response.ok:
             logger.error(
-                "Failed to download attachment: status=%s url=%s",
+                "Devin API download attachments failed: status=%s url=%s body=%s",
                 response.status_code,
-                attachment_url,
+                url,
+                response.text,
             )
             response.raise_for_status()
         return response.text
@@ -299,43 +305,41 @@ class DevinClient:
         session_id: str,
         poll_interval: int = 30,
         timeout: int = 1800,
-    ) -> list[dict[str, Any]]:
-        """Poll session messages until Devin has responded.
+    ) -> dict[str, Any]:
+        """Poll session attachments until bugs_report.json is available.
 
-        Checks for any message from Devin (i.e. not a user message)
-        by polling the messages endpoint at the configured interval.
+        Checks for a ``bugs_report.json`` attachment by polling the attachments
+        endpoint at the configured interval.
 
         Args:
             org_id: The Devin organization ID.
             session_id: The Devin session ID.
-            poll_interval: Seconds between message checks.
+            poll_interval: Seconds between attachment checks.
             timeout: Maximum seconds to wait before raising TimeoutError.
 
         Returns:
-            The full list of messages once a Devin response is found.
+            The attachment object for ``bugs_report.json``.
 
         Raises:
-            TimeoutError: If no Devin message appears within timeout.
+            TimeoutError: If ``bugs_report.json`` does not appear within timeout.
             requests.HTTPError: If any API call fails.
         """
         elapsed = 0
         while elapsed < timeout:
-            messages = self.list_messages(org_id, session_id)
-            devin_messages = [
-                m
-                for m in messages
-                if m.get("role") != "user" and m.get("sender") != "user"
-            ]
-            if devin_messages:
+            attachments = self.list_attachments(org_id, session_id)
+            bugs_report = next(
+                (a for a in attachments if a.get("name") == "bugs_report.json"),
+                None,
+            )
+            if bugs_report:
                 logger.info(
-                    "Devin session %s has %d message(s) (elapsed: %ds)",
+                    "Devin session %s: bugs_report.json found (elapsed: %ds)",
                     session_id,
-                    len(devin_messages),
                     elapsed,
                 )
-                return messages
+                return bugs_report
             logger.info(
-                "Devin session %s: no response yet (elapsed: %ds)",
+                "Devin session %s: bugs_report.json not yet available (elapsed: %ds)",
                 session_id,
                 elapsed,
             )
@@ -343,7 +347,7 @@ class DevinClient:
             elapsed += poll_interval
 
         raise TimeoutError(
-            f"Devin session {session_id} did not respond within {timeout}s"
+            f"Devin session {session_id} did not produce bugs_report.json within {timeout}s"
         )
 
     def build_bug_identification_prompt(

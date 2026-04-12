@@ -121,12 +121,12 @@ class AutomationsRestApi(BaseSupersetApi):
                 num_bugs=num_bugs,
                 git_repo=git_repo,
             )
-            devin_response = self.devin_client.create_session(
-                org_id=org_id,
-                prompt=prompt,
-            )
+            # devin_response = self.devin_client.create_session(
+            #     org_id=org_id,
+            #     prompt=prompt,
+            # )
 
-            session_id = devin_response.get("session_id", "")
+            session_id = "195c529a1bc84d5cae2f5c74cafdbd9d"
             if not session_id:
                 return self.response_500(
                     message="Devin API did not return a session_id"
@@ -147,7 +147,7 @@ class AutomationsRestApi(BaseSupersetApi):
                 session_id=session_id,
             )
 
-            bugs = self._download_bugs_report(attachments)
+            bugs = self._download_bugs_report(attachments, org_id=org_id)
             logger.info(
                 "Extracted %d bugs from Devin session %s", len(bugs), session_id
             )
@@ -198,6 +198,7 @@ class AutomationsRestApi(BaseSupersetApi):
     def _download_bugs_report(
         self,
         attachments: list[dict[str, Any]],
+        org_id: str,
     ) -> list[dict[str, Any]]:
         """Find and download bugs_report.json from session attachments.
 
@@ -213,12 +214,9 @@ class AutomationsRestApi(BaseSupersetApi):
         """
         for attachment in attachments:
             if attachment.get("name") == self._BUGS_REPORT_FILENAME:
-                download_url = attachment.get("url", "")
-                if not download_url:
-                    raise ValueError(
-                        f"{self._BUGS_REPORT_FILENAME} attachment has no URL"
-                    )
-                content = self.devin_client.download_attachment(download_url)
+                attachment_id = attachment.get("attachment_id", "")
+                attachment_name = attachment.get("attachment_name", "")
+                content = self.devin_client.download_attachment(org_id, attachment_id, attachment_name)
                 parsed = json.loads(content)
                 if isinstance(parsed, list):
                     return parsed  # type: ignore[no-any-return]

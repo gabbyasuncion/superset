@@ -61,16 +61,18 @@ def test_devin_client_create_session() -> None:
     with patch.dict("os.environ", {"DEVIN_API_KEY": "test-key"}):
         client = DevinClient()
         mock_response = MagicMock()
+        mock_response.ok = True
         mock_response.json.return_value = {
             "session_id": "sess-123",
             "bugs": [],
         }
-        mock_response.raise_for_status = MagicMock()
+        mock_response.status_code = 200
         with patch.object(
-            client._session, "post", return_value=mock_response
-        ) as mock_post:
+            client._session, "request", return_value=mock_response
+        ) as mock_request:
             result = client.create_session(org_id="org-456", prompt="find bugs")
-            mock_post.assert_called_once_with(
+            mock_request.assert_called_once_with(
+                "POST",
                 "https://api.devin.ai/v3/organizations/org-456/sessions",
                 json={"prompt": "find bugs"},
             )

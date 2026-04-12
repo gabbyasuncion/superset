@@ -117,16 +117,16 @@ class AutomationsRestApi(BaseSupersetApi):
                 return self.response_400(message="DEVIN_ORG_ID is not configured")
 
             # Step 1: Create a Devin session to identify bugs
-            self.devin_client.build_bug_identification_prompt(
+            prompt = self.devin_client.build_bug_identification_prompt(
                 num_bugs=num_bugs,
                 git_repo=git_repo,
             )
-            # devin_response = self.devin_client.create_session(
-            #     org_id=org_id,
-            #     prompt=prompt,
-            # )
+            devin_response = self.devin_client.create_session(
+                org_id=org_id,
+                prompt=prompt,
+            )
 
-            session_id = "195c529a1bc84d5cae2f5c74cafdbd9d"
+            session_id = devin_response.get("session_id", "")
             if not session_id:
                 return self.response_500(
                     message="Devin API did not return a session_id"

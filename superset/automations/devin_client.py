@@ -337,7 +337,7 @@ class DevinClient:
         while elapsed < timeout:
             messages = self.list_messages(org_id, session_id)
             for msg in messages:
-                text = msg.get("text", "")
+                text = msg.get("message", "")
                 if text.startswith(self._BUGS_REPORT_PREFIX):
                     logger.info(
                         "Devin session %s: bugs report message found (elapsed: %ds)",

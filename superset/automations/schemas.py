@@ -20,7 +20,7 @@ from marshmallow import fields, Schema
 
 
 class AutomationsTicketsResponseSchema(Schema):
-    """Schema for the POST /api/v1/automations/tickets response."""
+    """Schema for the POST /api/v1/automations/bug_swatter response."""
 
     session_id = fields.String(
         metadata={"description": "The Devin session ID used to identify bugs"}

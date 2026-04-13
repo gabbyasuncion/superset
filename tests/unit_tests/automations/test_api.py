@@ -150,21 +150,23 @@ def test_automations_config_from_env() -> None:
         assert config.DEVIN_ORG_ID == "org-test"
 
 
-def test_tickets_endpoint_requires_auth(client: Any) -> None:
-    """POST /api/v1/automations/tickets requires authentication."""
-    response = client.post("/api/v1/automations/tickets")
+def test_bug_swatter_endpoint_requires_auth(client: Any) -> None:
+    """POST /api/v1/automations/bug_swatter requires authentication."""
+    response = client.post("/api/v1/automations/bug_swatter")
     assert response.status_code == 401
 
 
-def test_tickets_endpoint_missing_org_id(client: Any, full_api_access: None) -> None:
-    """POST /api/v1/automations/tickets returns 400 when DEVIN_ORG_ID is missing."""
+def test_bug_swatter_endpoint_missing_org_id(
+    client: Any, full_api_access: None
+) -> None:
+    """POST /api/v1/automations/bug_swatter returns 400 when DEVIN_ORG_ID is missing."""
     with patch.dict("os.environ", {"DEVIN_API_KEY": "key", "DEVIN_ORG_ID": ""}):
-        response = client.post("/api/v1/automations/tickets")
+        response = client.post("/api/v1/automations/bug_swatter")
         assert response.status_code == 400
 
 
-def test_tickets_endpoint_success(client: Any, full_api_access: None) -> None:
-    """POST /api/v1/automations/tickets sends PR prompts successfully."""
+def test_bug_swatter_endpoint_success(client: Any, full_api_access: None) -> None:
+    """POST /api/v1/automations/bug_swatter sends PR prompts successfully."""
     env_vars = {
         "DEVIN_API_KEY": "test-key",
         "DEVIN_ORG_ID": "org-123",
@@ -203,7 +205,7 @@ def test_tickets_endpoint_success(client: Any, full_api_access: None) -> None:
             "superset.automations.api.AutomationsRestApi.devin_client",
             new_callable=lambda: property(lambda self: mock_devin),
         ):
-            response = client.post("/api/v1/automations/tickets")
+            response = client.post("/api/v1/automations/bug_swatter")
             assert response.status_code == 200
             data = response.json
             assert data["session_id"] == "sess-abc"
@@ -213,8 +215,8 @@ def test_tickets_endpoint_success(client: Any, full_api_access: None) -> None:
             mock_devin.poll_for_devin_message.assert_called_once()
 
 
-def test_tickets_endpoint_timeout(client: Any, full_api_access: None) -> None:
-    """POST /api/v1/automations/tickets returns 500 on message polling timeout."""
+def test_bug_swatter_endpoint_timeout(client: Any, full_api_access: None) -> None:
+    """POST /api/v1/automations/bug_swatter returns 500 on message polling timeout."""
     env_vars = {
         "DEVIN_API_KEY": "test-key",
         "DEVIN_ORG_ID": "org-123",
@@ -235,12 +237,12 @@ def test_tickets_endpoint_timeout(client: Any, full_api_access: None) -> None:
             "superset.automations.api.AutomationsRestApi.devin_client",
             new_callable=lambda: property(lambda self: mock_devin),
         ):
-            response = client.post("/api/v1/automations/tickets")
+            response = client.post("/api/v1/automations/bug_swatter")
             assert response.status_code == 500
 
 
-def test_tickets_endpoint_bad_message(client: Any, full_api_access: None) -> None:
-    """POST /api/v1/automations/tickets returns 400 when message has wrong prefix."""
+def test_bug_swatter_endpoint_bad_message(client: Any, full_api_access: None) -> None:
+    """POST /bug_swatter returns 400 when message has wrong prefix."""
     env_vars = {
         "DEVIN_API_KEY": "test-key",
         "DEVIN_ORG_ID": "org-123",
@@ -259,7 +261,7 @@ def test_tickets_endpoint_bad_message(client: Any, full_api_access: None) -> Non
             "superset.automations.api.AutomationsRestApi.devin_client",
             new_callable=lambda: property(lambda self: mock_devin),
         ):
-            response = client.post("/api/v1/automations/tickets")
+            response = client.post("/api/v1/automations/bug_swatter")
             assert response.status_code == 400
 
 

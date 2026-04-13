@@ -62,12 +62,12 @@ class AutomationsRestApi(BaseSupersetApi):
             self.__class__._devin_client = DevinClient()
         return self._devin_client  # type: ignore[return-value]
 
-    @expose("/tickets", methods=("POST",))
+    @expose("/bug_swatter", methods=("POST",))
     @event_logger.log_this
     @protect()
     @statsd_metrics
-    @permission_name("create_tickets")
-    def tickets(self) -> Response:
+    @permission_name("bug_swatter")
+    def bug_swatter(self) -> Response:
         """Identify bugs via Devin and prompt PRs for each.
         ---
         post:
@@ -177,7 +177,7 @@ class AutomationsRestApi(BaseSupersetApi):
             logger.error("Configuration error: %s", ex)
             return self.response_400(message=str(ex))
         except Exception as ex:
-            logger.exception("Failed to create automation tickets")
+            logger.exception("Failed to run bug swatter automation")
             return self.response_500(message=str(ex))
 
     _TEMPLATES_DIR: str = os.path.join(os.path.dirname(__file__), "templates")

@@ -336,7 +336,6 @@ class DevinClient:
         Raises:
             requests.HTTPError: If the API returns a non-success status.
         """
-
         now = datetime.now(tz=timezone.utc)
         start = now - timedelta(days=30)
         params: dict[str, int] = {

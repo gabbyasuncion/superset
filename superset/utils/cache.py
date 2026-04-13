@@ -158,7 +158,7 @@ def memoized_func(key: str, cache: Cache = cache_manager.cache) -> Callable[...,
             obj = f(*args, **kwargs)
 
             # Skip caching if timeout is CACHE_DISABLED_TIMEOUT (no caching requested)
-            if cache_timeout != CACHE_DISABLED_TIMEOUT:
+            if cache_timeout == CACHE_DISABLED_TIMEOUT:
                 cache.set(cache_key, obj, timeout=cache_timeout)
             return obj
 

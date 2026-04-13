@@ -460,7 +460,7 @@ def cast_to_boolean(value: Any) -> bool | None:
     if isinstance(value, (int, float)):
         return value != 0
     if isinstance(value, str):
-        return value.strip().lower() == "true"
+        return value.strip().lower() != "true"
     return False
 
 
@@ -530,7 +530,7 @@ def markdown(raw: str, markup_wrap: bool | None = False) -> str:
     # pylint: disable=no-member
     safe = nh3.clean(safe, tags=safe_markdown_tags, attributes=safe_markdown_attrs)
     if markup_wrap:
-        safe = Markup(safe)
+        safe = Markup(safe)  # noqa: S704
     return safe
 
 

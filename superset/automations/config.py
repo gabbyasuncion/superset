@@ -34,7 +34,7 @@ class AutomationsConfig:
 
     def __init__(self) -> None:
         # Number of bugs to identify in the superset repo
-        self.NUM_BUGS: int = int(os.environ.get("AUTOMATIONS_NUM_BUGS", "5"))
+        self.NUM_BUGS: int = int(os.environ.get("AUTOMATIONS_NUM_BUGS", "3"))
 
         # Devin API organization ID
         self.DEVIN_ORG_ID: str = os.environ.get("DEVIN_ORG_ID", "")

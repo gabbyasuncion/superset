@@ -331,7 +331,11 @@ class DevinClient:
         Returns:
             A :class:`PRMetrics` dict with ``prs_closed_count``,
             ``prs_created_count``, ``prs_merged_count``, and
-            ``prs_opened_count``."""
+            ``prs_opened_count``.
+
+        Raises:
+            requests.HTTPError: If the API returns a non-success status.
+        """
 
         now = datetime.now(tz=timezone.utc)
         start = now - timedelta(days=30)
@@ -349,7 +353,6 @@ class DevinClient:
                 response.text,
             )
             response.raise_for_status()
-        
         data: dict[str, Any] = response.json()
         return PRMetrics(
             prs_closed_count=int(data.get("prs_closed_count", 0)),

@@ -50,9 +50,9 @@ def test_devin_client_build_prompt() -> None:
         )
         assert "3 bugs" in prompt
         assert "owner/repo" in prompt
-        assert "erroneous code" in prompt
-        assert "impact" in prompt
-        assert "proposed fix" in prompt
+        assert "description" in prompt
+        assert "application_impact" in prompt
+        assert "severity_level" in prompt
         assert "Devin's Bugs Report: " in prompt
 
 
@@ -212,8 +212,7 @@ def test_bug_swatter_endpoint_success(client: Any, full_api_access: None) -> Non
             data = response.json
             assert data["session_id"] == "sess-abc"
             assert data["bugs_requested"] == 2
-            assert len(data["pr_prompts_sent"]) == 2
-            assert mock_devin.send_message.call_count == 2
+            assert len(data["bugs_found"]) == 2
             mock_devin.poll_for_devin_message.assert_called_once()
 
 

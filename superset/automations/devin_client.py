@@ -476,6 +476,6 @@ class DevinClient:
             f"Limit your search to commits made to master in the past two weeks. "
             f"For each bug, open a new PR to fix it. \n"
             f"Lastly, respond with a message prefixed with {self._BUGS_REPORT_PREFIX}. Respond with a raw string of a JSON-formatted "
-            f"array summarizing the found bugs. Each summary should have a `description`, `application_impact`, and "
-            f"`severity_level`.\n"
+            f"array summarizing the found bugs. Each summary should have a `description`, `application_impact`, "
+            f"`severity_level`, and `pr_link` corresponding to the opened PR.\n"
         )

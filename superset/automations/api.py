@@ -154,13 +154,13 @@ class AutomationsRestApi(BaseSupersetApi):
 
         except TimeoutError as ex:
             logger.error("Devin session polling timed out: %s", ex)
-            return self.response_500(message=str(ex))
+            return self.response_500(message="Devin session polling timed out")
         except ValueError as ex:
             logger.error("Configuration error: %s", ex)
             return self.response_400(message=str(ex))
-        except Exception as ex:
+        except Exception:
             logger.exception("Failed to run bug swatter automation")
-            return self.response_500(message=str(ex))
+            return self.response_500(message="An unexpected error occurred")
 
     _TEMPLATES_DIR: str = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -239,8 +239,16 @@ class AutomationsRestApi(BaseSupersetApi):
             prs_merged_count = pr_metrics["prs_merged_count"]
             prs_opened_count = pr_metrics["prs_opened_count"]
 
-            merge_rate = (prs_merged_count / prs_created_count) * 100
-            close_rate = (prs_closed_count / prs_created_count) * 100
+            merge_rate = (
+                (prs_merged_count / prs_created_count) * 100
+                if prs_created_count
+                else 0.0
+            )
+            close_rate = (
+                (prs_closed_count / prs_created_count) * 100
+                if prs_created_count
+                else 0.0
+            )
 
             env = Environment(
                 loader=FileSystemLoader(os.path.join(self._TEMPLATES_DIR, "email")),
@@ -260,9 +268,11 @@ class AutomationsRestApi(BaseSupersetApi):
                 config=current_app.config,
             )
             return self.response(200, message=f"Email sent to {to}")
-        except Exception as ex:
+        except Exception:
             logger.exception("Failed to send email")
-            return self.response_500(message=str(ex))
+            return self.response_500(
+                message="An error occurred while sending the report email"
+            )
 
     _BUGS_REPORT_PREFIX: str = "Devin's Bugs Report: "
 

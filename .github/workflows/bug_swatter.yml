@@ -21,6 +21,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"username\": \"$admin_api_username\", \"password\": \"$admin_api_password\", \"provider\": \"db\"}" \
             | jq -r '.access_token')
+          echo "::add-mask::${bearer_token}"
           echo "token=${bearer_token}" >> "$GITHUB_OUTPUT"
   
   call_bug_swatter_api:

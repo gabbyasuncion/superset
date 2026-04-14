@@ -32,12 +32,12 @@ jobs:
           TOKEN: ${{needs.auth_to_superset_api.outputs.token}}
         run: echo $TOKEN
   
-  # call_bug_swatter_api:
-  #   needs: auth_to_superset_api
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - env:
-  #         TOKEN: ${{needs.auth_to_superset_api.outputs.token}}
-  #       run: |
-  #         curl -X POST http://localhost:8088/api/v1/automations/tickets \
-  #           -H "Authorization: Bearer ${TOKEN}"
+  call_bug_swatter_api:
+    needs: auth_to_superset_api
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          TOKEN: ${{needs.auth_to_superset_api.outputs.token}}
+        run: |
+          curl -X POST http://localhost:8088/api/v1/automations/bug_swatter \
+            -H "Authorization: Bearer ${TOKEN}"

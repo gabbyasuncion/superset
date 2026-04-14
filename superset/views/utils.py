@@ -244,8 +244,8 @@ def get_form_data(
         slc = db.session.query(Slice).filter_by(id=slice_id).one_or_none()
         if slc:
             slice_form_data = slc.form_data.copy()
-            form_data.update(slice_form_data)
-            form_data = form_data
+            slice_form_data.update(form_data)
+            form_data = slice_form_data
 
     update_time_range(form_data)
     return form_data, slc

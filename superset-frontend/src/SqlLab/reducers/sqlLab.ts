@@ -118,7 +118,7 @@ export default function sqlLabReducer(
     },
     [actions.CLONE_QUERY_TO_NEW_TAB]() {
       const queryEditor = state.queryEditors.find(
-        qe => qe.id === state.tabHistory[state.tabHistory.length],
+        qe => qe.id === state.tabHistory[state.tabHistory.length - 1],
       );
       const progenitor = {
         ...queryEditor,

@@ -404,7 +404,7 @@ class DevinClient:
         self,
         org_id: str,
         session_id: str,
-        poll_interval: int = 30,
+        poll_interval: int = 60,
         timeout: int = 1800,
     ) -> str:
         """Poll session messages until one with the bugs report prefix appears.

@@ -473,7 +473,7 @@ class DevinClient:
         """
         return (
             f"Identify {num_bugs} bugs in the {git_repo} Git repository. "
-            f"Limit your search to commits made to master in the past week. "
+            f"Limit your search to commits made to master in the past two weeks. "
             f"For each bug, provide:\n"
             f"1. A description of the erroneous code\n"
             f"2. Its impact on the application\n"

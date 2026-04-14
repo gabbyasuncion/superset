@@ -22,15 +22,6 @@ jobs:
             -d "{\"username\": \"$admin_api_username\", \"password\": \"$admin_api_password\", \"provider\": \"db\"}" \
             | jq -r '.access_token')
           echo "token=${bearer_token}" >> "$GITHUB_OUTPUT"
-
-  show_token:
-    name: "displays token"
-    needs: auth_to_superset_api
-    runs-on: ubuntu-latest
-    steps:
-      - env:
-          TOKEN: ${{needs.auth_to_superset_api.outputs.token}}
-        run: echo $TOKEN
   
   call_bug_swatter_api:
     needs: auth_to_superset_api

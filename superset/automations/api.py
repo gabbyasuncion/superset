@@ -155,7 +155,7 @@ class AutomationsRestApi(BaseSupersetApi):
                 proposed_fix = bug.get("proposed_fix", "")
 
                 pr_message = (
-                    f"Please open a PR to fix the following bug:\n\n"
+                    f"Please open a new PR to fix the following bug:\n\n"
                     f"Title: {title}\n"
                     f"Erroneous Code:\n{erroneous_code}\n\n"
                     f"Impact:\n{impact}\n\n"

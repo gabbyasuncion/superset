@@ -21,6 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from superset.automations.api import AutomationsRestApi
 from superset.automations.config import AutomationsConfig
 from superset.automations.devin_client import DevinClient
 from superset.utils import json
@@ -131,7 +132,7 @@ def test_automations_config_defaults() -> None:
     """AutomationsConfig has expected default values."""
     with patch.dict("os.environ", {}, clear=True):
         config = AutomationsConfig()
-        assert config.NUM_BUGS == 5
+        assert config.NUM_BUGS == 3
         assert config.DEVIN_API_BASE_URL == "https://api.devin.ai"
         assert config.TARGET_GIT_REPO == "gabbyasuncion/superset"
 
@@ -201,9 +202,10 @@ def test_bug_swatter_endpoint_success(client: Any, full_api_access: None) -> Non
     mock_devin.send_message.return_value = send_message_response
 
     with patch.dict("os.environ", env_vars):
-        with patch(
-            "superset.automations.api.AutomationsRestApi.devin_client",
-            new_callable=lambda: property(lambda self: mock_devin),
+        with patch.object(
+            AutomationsRestApi,
+            "_get_devin_client",
+            return_value=mock_devin,
         ):
             response = client.post("/api/v1/automations/bug_swatter")
             assert response.status_code == 200
@@ -233,9 +235,10 @@ def test_bug_swatter_endpoint_timeout(client: Any, full_api_access: None) -> Non
     )
 
     with patch.dict("os.environ", env_vars):
-        with patch(
-            "superset.automations.api.AutomationsRestApi.devin_client",
-            new_callable=lambda: property(lambda self: mock_devin),
+        with patch.object(
+            AutomationsRestApi,
+            "_get_devin_client",
+            return_value=mock_devin,
         ):
             response = client.post("/api/v1/automations/bug_swatter")
             assert response.status_code == 500
@@ -257,9 +260,10 @@ def test_bug_swatter_endpoint_bad_message(client: Any, full_api_access: None) ->
     mock_devin.poll_for_devin_message.return_value = "No prefix here"
 
     with patch.dict("os.environ", env_vars):
-        with patch(
-            "superset.automations.api.AutomationsRestApi.devin_client",
-            new_callable=lambda: property(lambda self: mock_devin),
+        with patch.object(
+            AutomationsRestApi,
+            "_get_devin_client",
+            return_value=mock_devin,
         ):
             response = client.post("/api/v1/automations/bug_swatter")
             assert response.status_code == 400

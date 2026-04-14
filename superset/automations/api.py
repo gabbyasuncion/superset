@@ -17,17 +17,16 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
-import os
-
-from flask import current_app, request, Response
-from jinja2 import Environment, FileSystemLoader
+from flask import current_app, Response
 from flask_appbuilder import expose
 from flask_appbuilder.security.decorators import permission_name, protect
+from jinja2 import Environment, FileSystemLoader
 
 from superset.automations.config import AutomationsConfig
-from superset.automations.devin_client import DevinClient
+from superset.automations.devin_client import DevinClient, PRMetrics
 from superset.automations.schemas import AutomationsTicketsResponseSchema
 from superset.extensions import event_logger
 from superset.utils import json
@@ -35,6 +34,7 @@ from superset.utils.core import send_email_smtp
 from superset.views.base_api import BaseSupersetApi, statsd_metrics
 
 logger = logging.getLogger(__name__)
+
 
 class AutomationsRestApi(BaseSupersetApi):
     """Automations Admin API.
@@ -45,7 +45,7 @@ class AutomationsRestApi(BaseSupersetApi):
     minted by the ``/api/v1/security/login`` endpoint.
 
     The Devin HTTP client is initialized once and reused across requests
-    and endpoints via :pyattr:`devin_client`.
+    and endpoints via :pymeth:`_get_devin_client`.
     """
 
     resource_name = "automations"
@@ -55,9 +55,15 @@ class AutomationsRestApi(BaseSupersetApi):
 
     _devin_client: DevinClient | None = None
 
-    @property
-    def devin_client(self) -> DevinClient:
-        """Return a reusable Devin API client, creating one if needed."""
+    def _get_devin_client(self) -> DevinClient:
+        """Return a reusable Devin API client, creating one if needed.
+
+        This is intentionally a regular method rather than a ``@property``
+        so that Flask-AppBuilder's ``__init__`` attribute introspection
+        (which calls ``getattr(self, attr)`` on every name in ``dir()``)
+        does not trigger eager ``DevinClient`` construction — which would
+        raise ``ValueError`` when ``DEVIN_API_KEY`` is absent.
+        """
         if self._devin_client is None:
             self.__class__._devin_client = DevinClient()
         return self._devin_client  # type: ignore[return-value]
@@ -109,11 +115,11 @@ class AutomationsRestApi(BaseSupersetApi):
                 return self.response_400(message="DEVIN_ORG_ID is not configured")
 
             # Step 1: Create a Devin session to identify bugs
-            prompt = self.devin_client.build_bug_identification_prompt(
+            prompt = self._get_devin_client().build_bug_identification_prompt(
                 num_bugs=num_bugs,
                 git_repo=git_repo,
             )
-            devin_response = self.devin_client.create_session(
+            devin_response = self._get_devin_client().create_session(
                 org_id=org_id,
                 prompt=prompt,
             )
@@ -126,7 +132,7 @@ class AutomationsRestApi(BaseSupersetApi):
 
             # Step 2: Poll messages until Devin responds with bugs report
             logger.info("Polling Devin session %s for bugs report message", session_id)
-            bugs_message = self.devin_client.poll_for_devin_message(
+            bugs_message = self._get_devin_client().poll_for_devin_message(
                 org_id=org_id,
                 session_id=session_id,
                 poll_interval=config.DEVIN_POLL_INTERVAL,
@@ -156,7 +162,7 @@ class AutomationsRestApi(BaseSupersetApi):
                     f"Proposed Fix:\n{proposed_fix}"
                 )
 
-                send_response = self.devin_client.send_message(
+                send_response = self._get_devin_client().send_message(
                     org_id=org_id,
                     session_id=session_id,
                     message=pr_message,
@@ -240,14 +246,18 @@ class AutomationsRestApi(BaseSupersetApi):
         config = AutomationsConfig()
         to = config.AUTOMATIONS_EMAIL_RECIPIENT
         if not to:
-            return self.response_400(message="AUTOMATIONS_EMAIL_RECIPIENT is not configured")
+            return self.response_400(
+                message="AUTOMATIONS_EMAIL_RECIPIENT is not configured"
+            )
 
         org_id = config.DEVIN_ORG_ID
         if not org_id:
             return self.response_400(message="DEVIN_ORG_ID is not configured")
 
         try:
-            pr_metrics: PRMetrics = self.devin_client.get_pr_metrics(org_id=org_id)
+            pr_metrics: PRMetrics = self._get_devin_client().get_pr_metrics(
+                org_id=org_id
+            )
             prs_closed_count = pr_metrics["prs_closed_count"]
             prs_created_count = pr_metrics["prs_created_count"]
             prs_merged_count = pr_metrics["prs_merged_count"]

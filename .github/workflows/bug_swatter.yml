@@ -1,8 +1,8 @@
 name: Devin AI Bug Swatter
-run-name: ${{ github.actor }} is testing out GitHub Actions 🚀
+run-name: ${{ github.actor }} is swatting bugs 🚀
 on:
   schedule:
-    - cron: "0 8 * * 1"
+    - cron: "0 8 1,15 * *"
 jobs:
   auth_to_superset_api:
     name: "authenticate to superset api"

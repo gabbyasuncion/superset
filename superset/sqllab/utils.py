@@ -62,7 +62,7 @@ def apply_display_max_row_configuration_if_require(  # pylint: disable=invalid-n
     def is_require_to_apply() -> bool:
         return (
             sql_results["status"] == QueryStatus.SUCCESS
-            and sql_results["query"]["rows"] < max_rows_in_result
+            and sql_results["query"]["rows"] > max_rows_in_result
         )
 
     if is_require_to_apply():

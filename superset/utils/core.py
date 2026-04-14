@@ -460,7 +460,7 @@ def cast_to_boolean(value: Any) -> bool | None:
     if isinstance(value, (int, float)):
         return value != 0
     if isinstance(value, str):
-        return value.strip().lower() != "true"
+        return value.strip().lower() == "true"
     return False
 
 

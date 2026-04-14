@@ -474,16 +474,8 @@ class DevinClient:
         return (
             f"Identify {num_bugs} bugs in the {git_repo} Git repository. "
             f"Limit your search to commits made to master in the past two weeks. "
-            f"For each bug, provide:\n"
-            f"1. A description of the erroneous code\n"
-            f"2. Its impact on the application\n"
-            f"3. A proposed fix\n\n"
-            f"Return the results as a JSON array in your response message "
-            f'prefixed with "{self._BUGS_REPORT_PREFIX}". '
-            f"Each element must have "
-            f"the keys: 'title', 'erroneous_code', 'impact', 'proposed_fix'.\n\n"
-            f"Example response format:\n"
-            f"{self._BUGS_REPORT_PREFIX}"
-            f'[{{"title": "...", "erroneous_code": "...", '
-            f'"impact": "...", "proposed_fix": "..."}}]'
+            f"For each bug, open a new PR to fix it. \n"
+            f"Lastly, respond with a message prefixed with {self._BUGS_REPORT_PREFIX}. Respond with a raw string of a JSON-formatted "
+            f"array summarizing the found bugs. Each summary should have a `description`, `application_impact`, and "
+            f"`severity_level`.\n"
         )

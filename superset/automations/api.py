@@ -145,34 +145,10 @@ class AutomationsRestApi(BaseSupersetApi):
                 "Extracted %d bugs from Devin session %s", len(bugs), session_id
             )
 
-            # Step 4: Send a message to Devin prompting a PR for each bug
-            pr_prompts_sent: list[dict[str, Any]] = []
-
-            for bug in bugs:
-                title = bug.get("title", "Bug identified by Devin")
-                erroneous_code = bug.get("erroneous_code", "")
-                impact = bug.get("impact", "")
-                proposed_fix = bug.get("proposed_fix", "")
-
-                pr_message = (
-                    f"Please open a new PR to fix the following bug:\n\n"
-                    f"Title: {title}\n"
-                    f"Erroneous Code:\n{erroneous_code}\n\n"
-                    f"Impact:\n{impact}\n\n"
-                    f"Proposed Fix:\n{proposed_fix}"
-                )
-
-                send_response = self._get_devin_client().send_message(
-                    org_id=org_id,
-                    session_id=session_id,
-                    message=pr_message,
-                )
-                pr_prompts_sent.append({"title": title, "response": send_response})
-
             return self.response(
                 200,
                 session_id=session_id,
-                pr_prompts_sent=pr_prompts_sent,
+                bugs_found=bugs,
                 bugs_requested=num_bugs,
             )
 

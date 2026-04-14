@@ -268,6 +268,103 @@ def test_bug_swatter_endpoint_bad_message(client: Any, full_api_access: None) ->
             assert response.status_code == 400
 
 
+def test_build_prompt_uses_refactored_field_names() -> None:
+    """Regression: prompt must use 'description', 'application_impact', and
+    'severity_level' — not the legacy 'erroneous code', 'impact', 'proposed fix'.
+
+    The original bug (fixed in PR #17) had the prompt requesting the old field
+    names, which caused downstream consumers to receive unexpected keys.  This
+    test fails if the prompt is reverted to the legacy schema.
+    """
+    with patch.dict("os.environ", {"DEVIN_API_KEY": "test-key"}):
+        client = DevinClient()
+        prompt = client.build_bug_identification_prompt(
+            num_bugs=5, git_repo="owner/repo"
+        )
+
+        # The refactored field names MUST be present
+        assert "description" in prompt
+        assert "application_impact" in prompt
+        assert "severity_level" in prompt
+
+        # The legacy field names MUST NOT appear
+        assert "erroneous code" not in prompt, (
+            "Prompt still contains legacy field 'erroneous code'; "
+            "expected 'description'"
+        )
+        assert "proposed fix" not in prompt, (
+            "Prompt still contains legacy field 'proposed fix'; "
+            "expected 'severity_level'"
+        )
+
+
+def test_bug_swatter_returns_bugs_found_not_pr_prompts_sent(
+    client: Any, full_api_access: None
+) -> None:
+    """Regression: /bug_swatter response uses 'bugs_found', not 'pr_prompts_sent'.
+
+    The original bug (fixed in PR #17) had the endpoint returning
+    'pr_prompts_sent' and calling send_message per bug.  After the refactor
+    the endpoint returns 'bugs_found' directly and does not send individual
+    messages.  This test fails if the response key is reverted.
+    """
+    env_vars = {
+        "DEVIN_API_KEY": "test-key",
+        "DEVIN_ORG_ID": "org-123",
+        "AUTOMATIONS_NUM_BUGS": "2",
+    }
+
+    bugs_data = [
+        {
+            "title": "Bug A",
+            "description": "desc a",
+            "application_impact": "high",
+            "severity_level": "critical",
+            "pr_link": "https://github.com/owner/repo/pull/1",
+        },
+        {
+            "title": "Bug B",
+            "description": "desc b",
+            "application_impact": "low",
+            "severity_level": "minor",
+            "pr_link": "https://github.com/owner/repo/pull/2",
+        },
+    ]
+    bugs_json = json.dumps(bugs_data)
+    bugs_message = f"Devin's Bugs Report: {bugs_json}"
+
+    mock_devin = MagicMock()
+    mock_devin.build_bug_identification_prompt.return_value = "find bugs"
+    mock_devin.create_session.return_value = {
+        "session_id": "sess-regression",
+        "status": "running",
+    }
+    mock_devin.poll_for_devin_message.return_value = bugs_message
+
+    with patch.dict("os.environ", env_vars):
+        with patch.object(
+            AutomationsRestApi,
+            "_get_devin_client",
+            return_value=mock_devin,
+        ):
+            response = client.post("/api/v1/automations/bug_swatter")
+            assert response.status_code == 200
+            data = response.json
+
+            # 'bugs_found' is the correct key after the refactor
+            assert "bugs_found" in data, (
+                "Response missing 'bugs_found'; endpoint may have "
+                "reverted to legacy 'pr_prompts_sent'"
+            )
+            assert "pr_prompts_sent" not in data, (
+                "Response still contains legacy key 'pr_prompts_sent'"
+            )
+            assert len(data["bugs_found"]) == 2
+
+            # The endpoint no longer calls send_message per bug
+            mock_devin.send_message.assert_not_called()
+
+
 def test_parse_bugs_from_message() -> None:
     """_parse_bugs_from_message extracts bugs JSON from prefixed message."""
     from superset.automations.api import AutomationsRestApi

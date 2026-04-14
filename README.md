@@ -71,7 +71,7 @@ docker compose up
 
 ## Running the GitHub Actions
 
-### Bug Swatter (Weekly)
+### Bug Swatter (Bi-Weekly)
 Scans the codebase to identify bugs and opens PRs to fix them.
 
 ```bash

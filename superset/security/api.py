@@ -343,8 +343,8 @@ class RoleRestAPI(BaseSupersetApi):
             )
         except ForbiddenError as e:
             return self.response_403(message=str(e))
-        except Exception as e:
-            return self.response_500(message=str(e))
+        except Exception:
+            return self.response_500(message="An unexpected error occurred")
 
 
 class UserRegistrationsRestAPI(BaseSupersetModelRestApi):

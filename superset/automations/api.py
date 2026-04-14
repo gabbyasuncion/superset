@@ -27,8 +27,7 @@ from flask_appbuilder import expose
 from flask_appbuilder.security.decorators import permission_name, protect
 
 from superset.automations.config import AutomationsConfig
-from superset.automations.devin_client import DevinClient, PRMetrics
-from superset.automations.jira_client import JiraClient
+from superset.automations.devin_client import DevinClient
 from superset.automations.schemas import AutomationsTicketsResponseSchema
 from superset.extensions import event_logger
 from superset.utils import json
@@ -41,13 +40,12 @@ class AutomationsRestApi(BaseSupersetApi):
     """Automations Admin API.
 
     Provides endpoints for automated workflows such as identifying bugs
-    via the Devin API and filing Jira tickets. Access is restricted to
-    authorized internal users via JWT tokens minted by the
-    ``/api/v1/security/login`` endpoint.
+    via the Devin API and prompting Devin to open PRs for each bug.
+    Access is restricted to authorized internal users via JWT tokens
+    minted by the ``/api/v1/security/login`` endpoint.
 
-    The Devin and Jira HTTP clients are initialized once and reused
-    across requests and endpoints via :pyattr:`devin_client` and
-    :pyattr:`jira_client`.
+    The Devin HTTP client is initialized once and reused across requests
+    and endpoints via :pyattr:`devin_client`.
     """
 
     resource_name = "automations"
@@ -56,7 +54,6 @@ class AutomationsRestApi(BaseSupersetApi):
     openapi_spec_component_schemas = (AutomationsTicketsResponseSchema,)
 
     _devin_client: DevinClient | None = None
-    _jira_client: JiraClient | None = None
 
     @property
     def devin_client(self) -> DevinClient:
@@ -65,31 +62,23 @@ class AutomationsRestApi(BaseSupersetApi):
             self.__class__._devin_client = DevinClient()
         return self._devin_client  # type: ignore[return-value]
 
-    @property
-    def jira_client(self) -> JiraClient:
-        """Return a reusable Jira API client, creating one if needed."""
-        if self._jira_client is None:
-            self.__class__._jira_client = JiraClient()
-        return self._jira_client  # type: ignore[return-value]
-
-    @expose("/tickets", methods=("POST",))
+    @expose("/bug_swatter", methods=("POST",))
     @event_logger.log_this
     @protect()
     @statsd_metrics
-    @permission_name("create_tickets")
-    def tickets(self) -> Response:
-        """Identify bugs via Devin and file Jira tickets.
+    @permission_name("bug_swatter")
+    def bug_swatter(self) -> Response:
+        """Identify bugs via Devin and prompt PRs for each.
         ---
         post:
-          summary: Identify bugs and create Jira tickets
+          summary: Identify bugs and prompt Devin to open PRs
           description: >-
             Uses the Devin API to identify bugs in the superset
-            repository and creates Jira bug tickets for each bug found.
-            The number of bugs to identify is sourced from the
-            automations configuration.
+            repository and sends a message back to the session
+            prompting Devin to open a PR for each bug found.
           responses:
             200:
-              description: Tickets created successfully
+              description: PR prompts sent successfully
               content:
                 application/json:
                   schema:
@@ -97,7 +86,7 @@ class AutomationsRestApi(BaseSupersetApi):
                     properties:
                       session_id:
                         type: string
-                      tickets_created:
+                      pr_prompts_sent:
                         type: array
                         items:
                           type: object
@@ -150,8 +139,8 @@ class AutomationsRestApi(BaseSupersetApi):
                 "Extracted %d bugs from Devin session %s", len(bugs), session_id
             )
 
-            # Step 4: Create Jira tickets for each bug
-            tickets_created: list[dict[str, Any]] = []
+            # Step 4: Send a message to Devin prompting a PR for each bug
+            pr_prompts_sent: list[dict[str, Any]] = []
 
             for bug in bugs:
                 title = bug.get("title", "Bug identified by Devin")
@@ -159,25 +148,25 @@ class AutomationsRestApi(BaseSupersetApi):
                 impact = bug.get("impact", "")
                 proposed_fix = bug.get("proposed_fix", "")
 
-                description = (
+                pr_message = (
+                    f"Please open a PR to fix the following bug:\n\n"
+                    f"Title: {title}\n"
                     f"Erroneous Code:\n{erroneous_code}\n\n"
                     f"Impact:\n{impact}\n\n"
                     f"Proposed Fix:\n{proposed_fix}"
                 )
 
-                ticket = self.jira_client.create_issue(
-                    project_key=config.JIRA_PROJECT_KEY,
-                    summary=title,
-                    description=description,
-                    assignee_account_id=config.JIRA_ASSIGNEE_ACCOUNT_ID,
-                    label=config.JIRA_BUG_LABEL,
+                send_response = self.devin_client.send_message(
+                    org_id=org_id,
+                    session_id=session_id,
+                    message=pr_message,
                 )
-                tickets_created.append(ticket)
+                pr_prompts_sent.append({"title": title, "response": send_response})
 
             return self.response(
                 200,
                 session_id=session_id,
-                tickets_created=tickets_created,
+                pr_prompts_sent=pr_prompts_sent,
                 bugs_requested=num_bugs,
             )
 
@@ -188,7 +177,7 @@ class AutomationsRestApi(BaseSupersetApi):
             logger.error("Configuration error: %s", ex)
             return self.response_400(message=str(ex))
         except Exception as ex:
-            logger.exception("Failed to create automation tickets")
+            logger.exception("Failed to run bug swatter automation")
             return self.response_500(message=str(ex))
 
     _TEMPLATES_DIR: str = os.path.join(os.path.dirname(__file__), "templates")

@@ -312,8 +312,8 @@ WTF_CSRF_EXEMPT_LIST = [
     "superset.views.core.log",
     "superset.views.datasource.views.samples",
     "flask_appbuilder.security.views.acs",
-    "superset.automations.api.tickets",
     "superset.automations.api.report",
+    "superset.automations.api.bug_swatter",
 ]
 
 # Whether to run the web server in debug mode or not
